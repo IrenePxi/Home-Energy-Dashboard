@@ -1,0 +1,194 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;margin:0}
+    .kpis{display:flex;gap:18px;padding:8px 12px}
+    .kpi{font-weight:600;color:#3a3a3a}
+    .small{font-size:12px;color:#777;margin-left:auto}
+    .wrap{display:grid;grid-template-columns:360px 1fr;gap:16px;padding:8px 12px}
+    #gauge,#sankey{width:100%}
+  </style>
+</head>
+<body>
+  <div class="kpis">
+    <div class="kpi">SOC: <span id="socTxt">--%</span></div>
+    <div class="kpi">PV: <span id="pvTxt">-- W</span></div>
+    <div class="kpi">Load: <span id="loadTxt">-- W</span></div>
+    <div class="kpi">Grid: <span id="gridTxt">-- W</span></div>
+    <div class="kpi">Battery: <span id="batTxt">-- W</span></div>  
+    <div class="small" id="tsTxt">Last update: --:--:--</div>
+  </div>
+
+  <div class="wrap">
+    <div id="gauge"></div>
+    <div id="sankey"></div>
+  </div>
+
+  <script>
+    const API = "http://localhost:8000/api/latest"; // change host if needed
+
+    function gaugeFig(soc){
+      return {
+        data:[{type:"indicator",mode:"gauge+number",value:soc,
+          number:{suffix:"%",valueformat:".0f"},
+          gauge:{axis:{range:[0,100]},bar:{thickness:0.35},
+                 threshold:{value:soc,line:{width:2}}}}],
+        layout:{margin:{l:10,r:10,t:10,b:10},height:280}
+      };
+    }
+
+
+function sankeyFig(pv, load, batt, grid, fc){
+    const fromGrid = Math.max(0, grid);
+    const fromFC   = Math.max(0, fc);
+    const fromPV   = Math.max(0, pv);
+
+    // ----- allocate measured flows (balanced & readable) -----
+    let pv_to_load = 0, pv_to_batt = 0;
+    let bat_to_load = 0;
+    let grid_to_load = 0, grid_to_batt = 0;
+    let fc_to_load = 0;
+
+    if (batt > 0) {
+      // -------- Battery discharging (source) --------
+      const dis = batt;
+      bat_to_load = Math.min(dis, load);
+
+      let resLoad = Math.max(0, load - bat_to_load);
+
+      pv_to_load = Math.min(fromPV, resLoad);
+      resLoad   -= pv_to_load;
+
+      fc_to_load = Math.min(fromFC, resLoad);
+      resLoad   -= fc_to_load;
+
+      grid_to_load = Math.min(fromGrid, resLoad);
+
+      pv_to_batt = 0;
+      grid_to_batt = 0;
+
+    } else {
+      // -------- Battery charging (sink) --------
+      const ch = -batt;
+
+      pv_to_load  = Math.min(fromPV, load);
+      let pv_sur  = Math.max(0, fromPV - pv_to_load);
+
+      // PV surplus charges battery first
+      pv_to_batt  = Math.min(ch, pv_sur);
+      let rem_ch  = Math.max(0, ch - pv_to_batt);
+
+      let unmetAfterPV = Math.max(0, load - pv_to_load);
+      grid_to_load = Math.min(fromGrid, unmetAfterPV);
+
+      // remaining grid can go to battery (bounded by rem_ch)
+      grid_to_batt = Math.min(Math.max(0, fromGrid - grid_to_load), rem_ch);
+      rem_ch      -= grid_to_batt;
+
+      let unmet = Math.max(0, load - pv_to_load - grid_to_load);
+      fc_to_load = Math.min(fromFC, unmet);
+    }
+
+    // ----- Sankey nodes -----
+    const labels = ["PV","Battery","Grid","Fuel Cell","Load"];
+    const id = n => labels.indexOf(n);
+
+    // Muted node colors (clean look)
+    const nodeColors = ["#5B8DB8",  // PV muted blue
+                        "#63A375",  // Battery muted green
+                        "#8A8F98",  // Grid muted gray
+                        "#8E77B8",  // Fuel cell muted purple
+                        "#6E6E73"]; // Load dark gray
+
+    // Build links
+    const src = [], tgt = [], val = [];
+    // start with all links neutral gray
+    const linkColor = [];
+
+    const C_NEUTRAL = "rgba(180,180,185,0.55)"; // soft gray
+    const C_BAT_OUT = "rgba(180,180,185,0.95)";                // orange highlight for Battery→Load
+    const C_BAT_IN  = "rgba(180,180,185,0.95)";                // teal highlight for →Battery (charging)
+
+    // Helper to push a link
+    function push(s, t, v, color=C_NEUTRAL){
+      src.push(s); tgt.push(t); val.push(v); linkColor.push(color);
+    }
+
+    // PV → Load
+    if (pv_to_load  > 0) push(id("PV"),      id("Load"),    pv_to_load);
+    // PV → Battery (charging highlight)
+    if (pv_to_batt  > 0) push(id("PV"),      id("Battery"), pv_to_batt, C_BAT_IN);
+    // Battery → Load (discharging highlight)
+    if (bat_to_load > 0) push(id("Battery"), id("Load"),    bat_to_load, C_BAT_OUT);
+    // Grid → Load
+    if (grid_to_load> 0) push(id("Grid"),    id("Load"),    grid_to_load);
+    // Grid → Battery (charging highlight)
+    if (grid_to_batt> 0) push(id("Grid"),    id("Battery"), grid_to_batt, C_BAT_IN);
+    // Fuel Cell → Load
+    if (fc_to_load  > 0) push(id("Fuel Cell"), id("Load"),  fc_to_load);
+
+    return {
+      data: [{
+        type: "sankey",
+        arrangement: "snap",
+        node: {
+          label: labels,
+          pad: 18, thickness: 16,
+          color: nodeColors
+        },
+        link: { source: src, target: tgt, value: val, color: linkColor }
+      }],
+      layout: { margin: {l:10, r:10, t:10, b:10}, height: 320 }
+    };
+  }
+
+    let gDraw=false, sDraw=false;
+
+    async function tick(){
+      try{
+        const r = await fetch(API, {cache:"no-store"});
+        const d = await r.json();
+
+        const pv   = +(d.real_pv   || 0);
+        const grid = +(d.real_grid || 0);
+        const soc  = +(d.real_soc  || 0);
+        const batt = +(d.real_bat  || 0);
+        const load = +(d.real_load1||0) + +(d.real_load2||0) + +(d.real_load3||0);
+        const fc   = +(d.real_fc   || 0);
+
+        const battAbs = Math.round(Math.abs(batt));
+        const battMode = batt > 0 ? "discharging" : (batt < 0 ? "charging" : "");
+
+
+
+        document.getElementById("socTxt").textContent  = Math.round(soc) + "%";
+        document.getElementById("pvTxt").textContent   = Math.round(pv) + " W";
+        document.getElementById("loadTxt").textContent = Math.round(load) + " W";
+        document.getElementById("gridTxt").textContent = Math.round(grid) + " W";
+        document.getElementById("tsTxt").textContent   = "Last update: " + (new Date()).toLocaleTimeString();
+        document.getElementById("batTxt").textContent =(batt >= 0 ? "+" : "-") + battAbs + " W" + (battMode ? " (" + battMode + ")" : "");
+
+        const g = gaugeFig(soc);
+        if (!gDraw){ Plotly.newPlot("gauge", g.data, g.layout, {displayModeBar:false}); gDraw=true; }
+        else        { Plotly.react  ("gauge", g.data, g.layout); }
+
+        const s = sankeyFig(pv, load, batt, grid, fc);
+        if (!sDraw){ Plotly.newPlot("sankey", s.data, s.layout, {displayModeBar:false}); sDraw=true; }
+        else        { Plotly.react  ("sankey", s.data, s.layout); }
+
+        const batLabel = batt > 0 ? `+${Math.round(batt)} W (chg)` :
+                        batt < 0 ? `-${Math.round(-batt)} W (dis)` : "0 W";
+        s.layout.annotations = [{
+        x: 0.02, y: 0.74, xref: "paper", yref: "paper",  // tweak to position by your layout
+        text: batLabel, showarrow: false, font: {size: 12, color: "#444"}
+        }];
+
+      }catch(e){ /* ignore and retry on next tick */ }
+    }
+    setInterval(tick, 2000); tick();
+  </script>
+</body>
+</html>
