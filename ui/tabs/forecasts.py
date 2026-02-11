@@ -93,7 +93,7 @@ def render_electricity_price():
                 
                 latest_dt = df_bar["DateTime"].max()
                 
-                now = pd.Timestamp.now()
+                now = pd.Timestamp.now().round("1min")
                 fig_bar.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
                 
                 fig_bar.update_layout(
@@ -102,7 +102,7 @@ def render_electricity_price():
                     showlegend=False,
                     xaxis_tickformat="%a %H:%M",
                     margin=dict(l=20, r=20, t=40, b=20),
-                    uirevision=True
+                    uirevision="chart_state"
                 )
                 st.plotly_chart(fig_bar, width='stretch', height=250, key="chart_price_bar")
             else:
@@ -136,7 +136,7 @@ def render_electricity_price():
                     ))
                 
                 # Now line
-                now = pd.Timestamp.now()
+                now = pd.Timestamp.now().round("1min")
                 fig.add_shape(type="line", x0=now, y0=0, x1=now, y1=1, xref="x", yref="paper", line=dict(color="red", width=2, dash="dot"))
                 fig.add_annotation(x=now, y=1.05, xref="x", yref="paper", text="Now", showarrow=False, font=dict(color="red"))
 
@@ -147,7 +147,7 @@ def render_electricity_price():
                     xaxis_rangeslider_visible=False,
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                     margin=dict(l=20, r=20, t=40, b=20),
-                    uirevision=True
+                    uirevision="chart_state"
                 )
                 fig.update_xaxes(
                     type="date", ticklabelmode="period", showgrid=True, griddash="dot",
@@ -195,7 +195,7 @@ def render_pv_forecast():
         try:
             df_pv = load_pv_predictions()
             fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (W)"})
-            now = pd.Timestamp.now()
+            now = pd.Timestamp.now().round("1min")
             fig_pv.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
             
             fig_pv.update_xaxes(
@@ -210,7 +210,7 @@ def render_pv_forecast():
                 hovermode="x unified", 
                 xaxis_rangeslider_visible=False,
                 margin=dict(l=20, r=20, t=40, b=20),
-                uirevision=True
+                uirevision="chart_state"
             )
             st.plotly_chart(fig_pv, width='stretch', height=180, key="chart_pv_forecast")
         except Exception as e:
@@ -298,7 +298,7 @@ def render_co2_forecast(df_co2=None):
                     color_discrete_sequence=["#2ca02c"] # Green for CO2
                 )
                 
-                now = pd.Timestamp.now()
+                now = pd.Timestamp.now().round("1min")
                 fig_co2.add_vline(x=now, line_width=2, line_dash="dash", line_color="red", opacity=0.7)
                 fig_co2.add_annotation(x=now, y=df_co2["gCO2_per_kWh"].max(), text="Now", showarrow=False, yshift=10)
                 
@@ -306,7 +306,7 @@ def render_co2_forecast(df_co2=None):
                     hovermode="x unified", xaxis_rangeslider_visible=False,
                     yaxis_title="gCO₂/kWh", showlegend=False,
                     margin=dict(l=20, r=20, t=40, b=20),
-                    uirevision=True
+                    uirevision="chart_state"
                 )
                 fig_co2.update_xaxes(showgrid=True, griddash="dot", tickformat="%H:%M\n%b %d")
                 fig_co2.update_yaxes(showgrid=True, griddash="dot")
@@ -368,7 +368,7 @@ def render_gas_price():
                         xaxis_rangeslider_visible=False,
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                         margin=dict(l=20, r=20, t=40, b=20),
-                        uirevision=True
+                        uirevision="chart_state"
                     )
                     fig_gas.update_xaxes(showgrid=True, griddash="dot", tickformat="%b %d")
                     fig_gas.update_yaxes(showgrid=True, griddash="dot")
