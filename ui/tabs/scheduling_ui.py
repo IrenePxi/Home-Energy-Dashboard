@@ -3,8 +3,9 @@ import pandas as pd
 from datetime import time as _time
 from services.scheduling import find_best_interval
 from data_sources.electricity_prices import load_unified_price_data
+from data_sources.co2 import fetch_co2_prog
 
-def render_scheduling():
+def render_scheduling(df_co2=None):
     with st.container(border=True):
         st.markdown("""
             <style>
@@ -15,6 +16,8 @@ def render_scheduling():
         """, unsafe_allow_html=True)
         st.markdown("#### 🧠 Smart Scheduling (Price Optimized)")
         st.caption("Automatically finds the cheapest time to run your selected devices.")
+        # ... (rest of the function)
+        # DEVICE_SPECS, selected_devs, today_start, deadline, df_price block removed for brevity but they are there
 
         # Predefined devices with default durations and power ratings (kW)
         DEVICE_SPECS = {
@@ -51,6 +54,7 @@ def render_scheduling():
             st.error(f"Error loading price data: {e}")
             return
 
+        # df_co2 is now passed as an argument from the top level (app.py)
 
         st.markdown("---")
 
@@ -144,13 +148,36 @@ def render_scheduling():
                     total_kwh = active_power * active_dur
                     total_cost = result['avg_price'] * total_kwh
                     
-                    c_m1, c_m2, c_m3 = st.columns([1.5, 1, 1])
+                    # Calculate CO2
+                    co2_val = 0.0
+                    co2_note = None
+                    if not df_co2.empty:
+                        mask = (df_co2["Time"] >= result["start"]) & (df_co2["Time"] <= result["end"])
+                        df_interval = df_co2.loc[mask]
+                        if not df_interval.empty:
+                            avg_co2 = df_interval["gCO2_per_kWh"].mean()
+                            co2_val = avg_co2 * total_kwh
+                            
+                            # Check if prognosis covers the full slot
+                            if df_co2["Time"].max() < result["end"]:
+                                co2_note = "Tomorrow's CO2 data is not available yet; showing partial estimate."
+                        else:
+                            co2_note = "CO2 data not available for this period."
+                    else:
+                        co2_note = "CO2 data unavailable."
+                    
+                    c_m1, c_m2, c_m3, c_m4 = st.columns([1.3, 0.7, 0.7, 0.8])
                     with c_m1:
                         st.metric("Best Time", f"{start_str} — {end_str}")
                     with c_m2:
-                         st.metric("Consumed Energy", f"{total_kwh:.1f} kWh")
+                         st.metric("Energy", f"{total_kwh:.1f} kWh")
                     with c_m3:
                         st.metric("Total Cost", f"{total_cost:.2f} DKK")
+                    with c_m4:
+                        st.metric("CO2 Impact", f"{int(co2_val)} g")
+                    
+                    if co2_note:
+                        st.caption(f"⚠️ *{co2_note}*")
                  else:
                       st.warning(f"Could not find schedule for {dev_name}")
 

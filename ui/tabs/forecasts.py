@@ -259,7 +259,7 @@ def render_weather_forecast():
         except Exception as e:
             st.error(f"Error loading weather data: {e}")
 
-def render_co2_forecast():
+def render_co2_forecast(df_co2=None):
     # --- 4. CO2 Emission Forecast Block ---
     with st.container(border=True):
         st.markdown("#### 🌍 CO₂ Forecast")
@@ -272,14 +272,17 @@ def render_co2_forecast():
              st.rerun()
              
         try:
-            from data_sources.co2 import fetch_co2_prog
-            
-            # Fetch data (horizon=96 to catch full future + today's history if available)
-            with st.spinner("Fetching CO2 data..."):
-                df_co2 = fetch_co2_prog(area="DK1", horizon_hours=96)
+            # Use shared data if available, otherwise fetch locally
+            if df_co2 is None:
+                from data_sources.co2 import fetch_co2_prog
+                # Fetch data (horizon=96 to catch full future + today's history if available)
+                with st.spinner("Fetching CO2 data..."):
+                    df_co2 = fetch_co2_prog(area="DK1", horizon_hours=96)
             
             # Filter to start from today 00:00
-            if not df_co2.empty:
+            if df_co2 is not None and not df_co2.empty:
+                # Essential copy to avoid modifying the shared df
+                df_co2 = df_co2.copy()
                 today_start = pd.Timestamp.now().normalize()
                 df_co2 = df_co2[df_co2["Time"] >= today_start]
                 
