@@ -14,52 +14,11 @@ def start_price_update():
 def start_pv_update():
     st.session_state["updating_pv"] = True
 
-def start_weather_update():
-    # Clear cache to force fresh fetch
-    st.cache_data.clear()
-    st.session_state["updating_weather"] = True
-
-def start_co2_update():
-    # Clear cache to force fresh fetch for CO2
-    from data_sources.co2 import fetch_co2_prog
-    fetch_co2_prog.clear()
-    st.session_state["updating_co2"] = True
-
-def start_gas_update():
-    st.session_state["updating_gas"] = True
-
 def render_electricity_price():
     # --- 1. Electricity Price Prediction Block ---
     with st.container(border=True):
         st.markdown("#### 💡 Electricity Price Prediction")
         
-        if st.button("🔄 Update Price", on_click=start_price_update, key="btn_update_price"):
-            pass
-        
-        # Logic for running the Price ML script
-        if st.session_state.get("updating_price", False):
-            st.session_state["long_running_task"] = True
-            with st.spinner("Running El Price prediction script..."):
-                try:
-                    from data_sources.electricity_prices import update_electricity_predictions
-                    from services.mqtt_publisher import publish_electricity_price
-                    
-                    df_res = update_electricity_predictions()
-                    if not df_res.empty:
-                        if publish_electricity_price(df_res):
-                            st.success("Done! Data published.")
-                        else:
-                            st.warning("Prediction done, but MQTT publish failed.")
-                    else:
-                        st.error("Prediction failed.")
-                except Exception as e:
-                    st.error(f"Failed: {e}")
-                finally:
-                    st.session_state["updating_price"] = False
-                    st.session_state["long_running_task"] = False
-                    st.rerun()
-
-
         # Display Price Charts
 
         try:
@@ -105,6 +64,34 @@ def render_electricity_price():
                     uirevision="chart_state"
                 )
                 st.plotly_chart(fig_bar, width='stretch', height=250, key="chart_price_bar")
+                
+                # Relocated Button for Prediction
+                if st.button("🔄 Update Prediction", on_click=start_price_update, key="btn_update_price"):
+                    pass
+                
+                # Logic for running the Price ML script
+                if st.session_state.get("updating_price", False):
+                    st.session_state["long_running_task"] = True
+                    with st.spinner("Running El Price prediction script..."):
+                        try:
+                            from data_sources.electricity_prices import update_electricity_predictions
+                            from services.mqtt_publisher import publish_electricity_price
+                            
+                            df_res = update_electricity_predictions()
+                            if not df_res.empty:
+                                if publish_electricity_price(df_res):
+                                    st.success("Done! Data published.")
+                                else:
+                                    st.warning("Prediction done, but MQTT publish failed.")
+                            else:
+                                if "updating_price" in st.session_state:
+                                    st.error("Prediction failed.")
+                        except Exception as e:
+                            st.error(f"Failed: {e}")
+                        finally:
+                            st.session_state["updating_price"] = False
+                            st.session_state["long_running_task"] = False
+                            st.rerun()
             else:
                 st.info("No hourly price data available for today.")
 
@@ -167,7 +154,7 @@ def render_pv_forecast():
     with st.container(border=True):
         st.markdown("#### ☀️ PV Power Prediction")
         
-        if st.button("🔄 Update PV", on_click=start_pv_update, key="btn_update_pv"):
+        if st.button("🔄 Update Prediction", on_click=start_pv_update, key="btn_update_pv"):
             pass
 
         if st.session_state.get("updating_pv", False):
@@ -221,17 +208,10 @@ def render_weather_forecast():
     with st.container(border=True):
         st.markdown("#### 🌡️ Weather Forecast")
         
-        if st.button("🔄 Update Weather", on_click=start_weather_update, key="btn_update_weather"):
-            pass
-        
-        if st.session_state.get("updating_weather", False):
-             st.session_state["updating_weather"] = False
-             st.rerun()
-
         try:
             from data_sources.weather import fetch_weather_open_meteo
             LAT, LON = 57.048, 9.921
-            now = pd.Timestamp.now()
+            now = pd.Timestamp.now().round("1min")
             start_date = (now - pd.Timedelta(days=1)).normalize()
             end_date = (now + pd.Timedelta(days=4)).normalize()
             
@@ -252,7 +232,7 @@ def render_weather_forecast():
                     hovermode="x unified", xaxis_rangeslider_visible=False,
                     yaxis_title="Temperature (°C)", showlegend=False,
                     margin=dict(l=20, r=20, t=40, b=20),
-                    uirevision=True
+                    uirevision="chart_state"
                 )
                 fig_temp.update_xaxes(showgrid=True, griddash="dot", tickformat="%H:%M\n%b %d")
                 fig_temp.update_yaxes(showgrid=True, griddash="dot")
@@ -268,13 +248,6 @@ def render_co2_forecast(df_co2=None):
     with st.container(border=True):
         st.markdown("#### 🌍 CO₂ Forecast")
         
-        if st.button("🔄 Update CO2", on_click=start_co2_update, key="btn_update_co2"):
-            pass
-        
-        if st.session_state.get("updating_co2", False):
-             st.session_state["updating_co2"] = False
-             st.rerun()
-             
         try:
             # Use shared data if available, otherwise fetch locally
             if df_co2 is None:
@@ -322,15 +295,6 @@ def render_gas_price():
     with st.container(border=True):
         st.markdown("#### 🔥 Natural Gas Price")
         
-        if st.button("🔄 Update Gas", on_click=start_gas_update, key="btn_update_gas"):
-            pass
-        
-        if st.session_state.get("updating_gas", False):
-            # Clear cache to force fresh fetch
-            fetch_gas_prices.clear()
-            st.session_state["updating_gas"] = False
-            st.rerun()
-
         try:
             # Fetch last 30 days
             df_gas = fetch_gas_prices(limit=100)
