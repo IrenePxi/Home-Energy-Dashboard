@@ -101,9 +101,10 @@ def render_electricity_price():
                     yaxis_title="Spot Price (DKK/kWh)",
                     showlegend=False,
                     xaxis_tickformat="%a %H:%M",
-                    margin=dict(l=20, r=20, t=40, b=20)
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    uirevision=True
                 )
-                st.plotly_chart(fig_bar, width='stretch', height=250)
+                st.plotly_chart(fig_bar, width='stretch', height=250, key="chart_price_bar")
             else:
                 st.info("No hourly price data available for today.")
 
@@ -145,7 +146,8 @@ def render_electricity_price():
                     hovermode="x unified",
                     xaxis_rangeslider_visible=False,
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    margin=dict(l=20, r=20, t=40, b=20)
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    uirevision=True
                 )
                 fig.update_xaxes(
                     type="date", ticklabelmode="period", showgrid=True, griddash="dot",
@@ -155,7 +157,7 @@ def render_electricity_price():
                         dict(dtickrange=[1000*60*60*24*3, None], value="%b %d\n(%a)"),
                     ]
                 )
-                st.plotly_chart(fig, width='stretch', height=250)
+                st.plotly_chart(fig, width='stretch', height=250, key="chart_price_trend")
 
         except Exception as e:
             st.error(f"Error loading price data: {e}")
@@ -207,9 +209,10 @@ def render_pv_forecast():
             fig_pv.update_layout(
                 hovermode="x unified", 
                 xaxis_rangeslider_visible=False,
-                margin=dict(l=20, r=20, t=40, b=20)
+                margin=dict(l=20, r=20, t=40, b=20),
+                uirevision=True
             )
-            st.plotly_chart(fig_pv, width='stretch', height=180)
+            st.plotly_chart(fig_pv, width='stretch', height=180, key="chart_pv_forecast")
         except Exception as e:
             st.warning(f"Could not load PV predictions: {e}")
 
@@ -248,11 +251,12 @@ def render_weather_forecast():
                 fig_temp.update_layout(
                     hovermode="x unified", xaxis_rangeslider_visible=False,
                     yaxis_title="Temperature (°C)", showlegend=False,
-                    margin=dict(l=20, r=20, t=40, b=20)
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    uirevision=True
                 )
                 fig_temp.update_xaxes(showgrid=True, griddash="dot", tickformat="%H:%M\n%b %d")
                 fig_temp.update_yaxes(showgrid=True, griddash="dot")
-                st.plotly_chart(fig_temp, width='stretch', height=250)
+                st.plotly_chart(fig_temp, width='stretch', height=250, key="chart_weather_temp")
             else:
                 st.info("Weather data unavailable.")
                 
@@ -301,11 +305,12 @@ def render_co2_forecast(df_co2=None):
                 fig_co2.update_layout(
                     hovermode="x unified", xaxis_rangeslider_visible=False,
                     yaxis_title="gCO₂/kWh", showlegend=False,
-                    margin=dict(l=20, r=20, t=40, b=20)
+                    margin=dict(l=20, r=20, t=40, b=20),
+                    uirevision=True
                 )
                 fig_co2.update_xaxes(showgrid=True, griddash="dot", tickformat="%H:%M\n%b %d")
                 fig_co2.update_yaxes(showgrid=True, griddash="dot")
-                st.plotly_chart(fig_co2, width='stretch', height=250)
+                st.plotly_chart(fig_co2, width='stretch', height=250, key="chart_co2_forecast")
             else:
                 st.info("CO2 data unavailable.")
                 
@@ -362,12 +367,13 @@ def render_gas_price():
                         hovermode="x unified",
                         xaxis_rangeslider_visible=False,
                         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                        margin=dict(l=20, r=20, t=40, b=20)
+                        margin=dict(l=20, r=20, t=40, b=20),
+                        uirevision=True
                     )
                     fig_gas.update_xaxes(showgrid=True, griddash="dot", tickformat="%b %d")
                     fig_gas.update_yaxes(showgrid=True, griddash="dot")
                     
-                    st.plotly_chart(fig_gas, width='stretch', height=180)
+                    st.plotly_chart(fig_gas, width='stretch', height=180, key="chart_gas_price")
                 else:
                     st.info("No recent gas price data found.")
             else:
