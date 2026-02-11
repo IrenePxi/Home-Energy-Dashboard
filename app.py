@@ -35,6 +35,7 @@ with r1_col2:
 
 with r1_col3:
     kv_forecasts.render_pv_forecast()
+    kv_forecasts.render_gas_price()
 
 # Row 2: CO2 + Weather + Scheduling
 r2_col1, r2_col2, r2_col3 = st.columns(3, gap="medium")

@@ -5,6 +5,7 @@ import pandas as pd
 from services.scripts import run_py
 from data_sources.electricity_prices import load_electricity_prices, load_unified_price_data
 from data_sources.pv import load_pv_predictions
+from data_sources.gas import fetch_gas_prices
 
 # Callbacks to lock autorefresh
 def start_price_update():
@@ -23,6 +24,9 @@ def start_co2_update():
     from data_sources.co2 import fetch_co2_prog
     fetch_co2_prog.clear()
     st.session_state["updating_co2"] = True
+
+def start_gas_update():
+    st.session_state["updating_gas"] = True
 
 def render_electricity_price():
     # --- 1. Electricity Price Prediction Block ---
@@ -205,7 +209,7 @@ def render_pv_forecast():
                 xaxis_rangeslider_visible=False,
                 margin=dict(l=20, r=20, t=40, b=20)
             )
-            st.plotly_chart(fig_pv, width='stretch', height=250)
+            st.plotly_chart(fig_pv, width='stretch', height=180)
         except Exception as e:
             st.warning(f"Could not load PV predictions: {e}")
 
@@ -304,3 +308,67 @@ def render_co2_forecast():
                 
         except Exception as e:
             st.error(f"Error loading CO2 data: {e}")
+
+def render_gas_price():
+    # --- 5. Natural Gas Balancing Price Block ---
+    with st.container(border=True):
+        st.markdown("#### 🔥 Natural Gas Price")
+        
+        if st.button("🔄 Update Gas", on_click=start_gas_update, key="btn_update_gas"):
+            pass
+        
+        if st.session_state.get("updating_gas", False):
+            # Clear cache to force fresh fetch
+            fetch_gas_prices.clear()
+            st.session_state["updating_gas"] = False
+            st.rerun()
+
+        try:
+            # Fetch last 30 days
+            df_gas = fetch_gas_prices(limit=100)
+            
+            if not df_gas.empty:
+                # Filter to recent 35 days (roughly 1 month + some room)
+                month_ago = pd.Timestamp.now().normalize() - pd.Timedelta(days=35)
+                df_plot = df_gas[df_gas["GasDay"] >= month_ago].copy()
+                
+                if not df_plot.empty:
+                    fig_gas = go.Figure()
+                    
+                    # Purchase Price
+                    fig_gas.add_trace(go.Scatter(
+                        x=df_plot["GasDay"], y=df_plot["PurchasePriceDKK_kWh"],
+                        mode='lines', name='Purchase Price',
+                        line=dict(color='#d62728', width=2)
+                    ))
+                    
+                    # Sales Price
+                    fig_gas.add_trace(go.Scatter(
+                        x=df_plot["GasDay"], y=df_plot["SalesPriceDKK_kWh"],
+                        mode='lines', name='Sales Price',
+                        line=dict(color='#1f77b4', width=2, dash='dot')
+                    ))
+                    
+                    # Highlight Today
+                    now = pd.Timestamp.now().normalize()
+                    fig_gas.add_vline(x=now, line_width=2, line_dash="dash", line_color="orange")
+                    
+                    fig_gas.update_layout(
+                        title="Gas Balancing (Imbalance) Prices",
+                        yaxis_title="DKK/kWh",
+                        hovermode="x unified",
+                        xaxis_rangeslider_visible=False,
+                        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                        margin=dict(l=20, r=20, t=40, b=20)
+                    )
+                    fig_gas.update_xaxes(showgrid=True, griddash="dot", tickformat="%b %d")
+                    fig_gas.update_yaxes(showgrid=True, griddash="dot")
+                    
+                    st.plotly_chart(fig_gas, width='stretch', height=180)
+                else:
+                    st.info("No recent gas price data found.")
+            else:
+                st.info("Gas price data unavailable.")
+                
+        except Exception as e:
+            st.error(f"Error loading gas price data: {e}")

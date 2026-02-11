@@ -3,10 +3,16 @@ import pandas as pd
 from datetime import time as _time
 from services.scheduling import find_best_interval
 from data_sources.electricity_prices import load_unified_price_data
-from data_sources.co2 import fetch_co2_prog
 
 def render_scheduling():
     with st.container(border=True):
+        st.markdown("""
+            <style>
+            [data-testid="stMetricLabel"] { font-size: 13px !important; }
+            [data-testid="stMetricValue"] { font-size: 20px !important; }
+            .sched-device-name { font-size: 1.05rem !important; font-weight: 600; margin-bottom: -5px; margin-top: -10px; }
+            </style>
+        """, unsafe_allow_html=True)
         st.markdown("#### 🧠 Smart Scheduling (Price Optimized)")
         st.caption("Automatically finds the cheapest time to run your selected devices.")
 
@@ -31,6 +37,12 @@ def render_scheduling():
             st.info("Select devices to see scheduling suggestions.")
             return
 
+        # Automatic Window: Today 00:00 to Tomorrow 06:00
+        today_start = pd.Timestamp.now().normalize()
+        deadline = today_start + pd.Timedelta(days=1, hours=6)
+        
+        st.markdown(f"💡 *Optimizing for the window:* **Today 00:00** — **Tomorrow 06:00**")
+
         # Load Data Automatically
         # Load price data
         try:
@@ -39,12 +51,6 @@ def render_scheduling():
             st.error(f"Error loading price data: {e}")
             return
 
-        # Load CO2 data (still needed for 'avg_co2' output even if w_cost=1.0)
-        try:
-            with st.spinner("Analyzing schedule..."):
-                 df_co2_sched = fetch_co2_prog(area="DK1", horizon_hours=48)
-        except Exception as e:
-            df_co2_sched = pd.DataFrame()
 
         st.markdown("---")
 
@@ -110,11 +116,10 @@ def render_scheduling():
             # Calculate
             result = find_best_interval(
                 df_price=df_price,
-                df_co2=df_co2_sched,
                 duration_hours=active_dur,
-                w_cost=1.0, 
                 earliest_time=None, 
-                latest_time=None
+                latest_time=None,
+                deadline_dt=deadline
             )
             
             # Render Card (Nested container for visual separation)
@@ -123,7 +128,7 @@ def render_scheduling():
                  c_head1, c_head2 = st.columns([0.9, 0.1])
                  with c_head1:
                      tooltip_text = f"Rated Power: {active_power} kW\nDuration: {active_dur} h"
-                     st.subheader(f"🔌 {display_name.split(' (')[0]}", help=tooltip_text)
+                     st.markdown(f'<p class="sched-device-name" title="{tooltip_text}">🔌 {display_name.split(" (")[0]}</p>', unsafe_allow_html=True)
                  with c_head2:
                      if st.button("⚙️", key=f"btn_set_{dev_name}"):
                          if dialog_decorator:
@@ -138,15 +143,14 @@ def render_scheduling():
                     # Calculate Totals
                     total_kwh = active_power * active_dur
                     total_cost = result['avg_price'] * total_kwh
-                    total_co2 = result['avg_co2'] * total_kwh
                     
                     c_m1, c_m2, c_m3 = st.columns([1.5, 1, 1])
                     with c_m1:
-                        st.markdown(f"**Best Time:** {start_str} — {end_str}")
+                        st.metric("Best Time", f"{start_str} — {end_str}")
                     with c_m2:
-                        st.metric("Total Cost", f"{total_cost:.2f} DKK")
+                         st.metric("Consumed Energy", f"{total_kwh:.1f} kWh")
                     with c_m3:
-                        st.metric("Total CO₂", f"{total_co2:.0f} g")
+                        st.metric("Total Cost", f"{total_cost:.2f} DKK")
                  else:
                       st.warning(f"Could not find schedule for {dev_name}")
 
