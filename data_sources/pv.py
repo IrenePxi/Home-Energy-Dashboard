@@ -35,7 +35,7 @@ from lightgbm import LGBMRegressor
 from meteostat import Point, Hourly, Daily
 
 # MQTT
-from DT_dashboard.services.paths import results_dir
+from services.paths import results_dir
 
 def load_pv_predictions():
     """Loads PV prediction results."""
@@ -187,7 +187,7 @@ def add_solar_features(df, lat, lon):
     return df
 
 def fetch_weather_data(location, start_date, end_date):
-    from DT_dashboard.data_sources.weather import fetch_weather_open_meteo
+    from data_sources.weather import fetch_weather_open_meteo
     
     # Fetch unified data
     # weather.py returns: ghi, dni, dhi, temp, wind, prcp, wpgt, coco

@@ -3,15 +3,8 @@ import os
 from pathlib import Path
 import streamlit as st
 
-# Fix import path for DT_dashboard module
-# Add the project root (parent of DT_dashboard) to sys.path
-current_dir = Path(__file__).parent.resolve()
-project_root = current_dir.parent.resolve()
-if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
-
-import DT_dashboard.ui.tabs.forecasts as kv_forecasts
-import DT_dashboard.ui.tabs.dt_real as kv_dt_real
+import ui.tabs.forecasts as kv_forecasts
+import ui.tabs.dt_real as kv_dt_real
 
 st.set_page_config(
     page_title="Home Energy Dashboard",
@@ -24,7 +17,7 @@ st.title("🏠 Home Energy Dashboard")
 
 # Initialize MQTT Connection (Backend)
 if "mqtt_client" not in st.session_state:
-    from DT_dashboard.services.mqtt_manager import get_client
+    from services.mqtt_manager import get_client
     get_client()  # Starts the loop and stores in session_state
 
 # Main Dashboard Layout
@@ -54,5 +47,5 @@ with r2_col2:
 
 with r2_col3:
     # Import here to avoid circular dependencies if any
-    import DT_dashboard.ui.tabs.scheduling_ui as kv_scheduling
+    import ui.tabs.scheduling_ui as kv_scheduling
     kv_scheduling.render_scheduling()

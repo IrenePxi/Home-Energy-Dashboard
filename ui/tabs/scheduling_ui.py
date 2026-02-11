@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 from datetime import time as _time
-from DT_dashboard.services.scheduling import find_best_interval
-from DT_dashboard.data_sources.electricity_prices import load_unified_price_data
-from DT_dashboard.data_sources.co2 import fetch_co2_prog
+from services.scheduling import find_best_interval
+from data_sources.electricity_prices import load_unified_price_data
+from data_sources.co2 import fetch_co2_prog
 
 def render_scheduling():
     with st.container(border=True):

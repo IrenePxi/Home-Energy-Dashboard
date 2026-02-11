@@ -2,8 +2,8 @@ import json
 import streamlit as st
 import streamlit.components.v1 as components
 from streamlit_autorefresh import st_autorefresh
-from DT_dashboard.services.paths import rpath
-from DT_dashboard.services.mqtt_manager import start_mqtt_listener, get_latest_data, get_connection_status, get_last_message
+from services.paths import rpath
+from services.mqtt_manager import start_mqtt_listener, get_latest_data, get_connection_status, get_last_message
 
 def render_dt_real():
     # Start the background MQTT listener (singleton)

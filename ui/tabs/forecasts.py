@@ -2,9 +2,9 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
-from DT_dashboard.services.scripts import run_py
-from DT_dashboard.data_sources.electricity_prices import load_electricity_prices, load_unified_price_data
-from DT_dashboard.data_sources.pv import load_pv_predictions
+from services.scripts import run_py
+from data_sources.electricity_prices import load_electricity_prices, load_unified_price_data
+from data_sources.pv import load_pv_predictions
 
 # Callbacks to lock autorefresh
 def start_price_update():
@@ -20,7 +20,7 @@ def start_weather_update():
 
 def start_co2_update():
     # Clear cache to force fresh fetch for CO2
-    from DT_dashboard.data_sources.co2 import fetch_co2_prog
+    from data_sources.co2 import fetch_co2_prog
     fetch_co2_prog.clear()
     st.session_state["updating_co2"] = True
 
@@ -37,8 +37,8 @@ def render_electricity_price():
             st.session_state["long_running_task"] = True
             with st.spinner("Running El Price prediction script..."):
                 try:
-                    from DT_dashboard.data_sources.electricity_prices import update_electricity_predictions
-                    from DT_dashboard.services.mqtt_publisher import publish_electricity_price
+                    from data_sources.electricity_prices import update_electricity_predictions
+                    from services.mqtt_publisher import publish_electricity_price
                     
                     df_res = update_electricity_predictions()
                     if not df_res.empty:
@@ -168,8 +168,8 @@ def render_pv_forecast():
             st.session_state["long_running_task"] = True
             with st.spinner("Running PV prediction script..."):
                 try:
-                    from DT_dashboard.data_sources.pv import run_pv_prediction
-                    from DT_dashboard.services.mqtt_publisher import publish_pv_forecast
+                    from data_sources.pv import run_pv_prediction
+                    from services.mqtt_publisher import publish_pv_forecast
                     
                     df_res = run_pv_prediction()
                     if not df_res.empty:
@@ -222,7 +222,7 @@ def render_weather_forecast():
              st.rerun()
 
         try:
-            from DT_dashboard.data_sources.weather import fetch_weather_open_meteo
+            from data_sources.weather import fetch_weather_open_meteo
             LAT, LON = 57.048, 9.921
             now = pd.Timestamp.now()
             start_date = (now - pd.Timedelta(days=1)).normalize()
@@ -268,7 +268,7 @@ def render_co2_forecast():
              st.rerun()
              
         try:
-            from DT_dashboard.data_sources.co2 import fetch_co2_prog
+            from data_sources.co2 import fetch_co2_prog
             
             # Fetch data (horizon=96 to catch full future + today's history if available)
             with st.spinner("Fetching CO2 data..."):

@@ -13,7 +13,7 @@ import certifi
 import warnings
 import json
 from datetime import datetime, timedelta
-from DT_dashboard.services.paths import results_dir
+from services.paths import results_dir
 
 # ML Imports
 try:
@@ -191,7 +191,7 @@ def fetch_electricity_prices_for_ml(area: str = "DK1") -> pd.DataFrame:
 # -------- ML Prediction Logic --------
 
 def _get_weather_unified(start_date, end_date):
-    from DT_dashboard.data_sources.weather import fetch_weather_open_meteo
+    from data_sources.weather import fetch_weather_open_meteo
     # Coordinates for Aalborg
     LAT, LON = 57.048, 9.921
     df = fetch_weather_open_meteo(LAT, LON, start_date, end_date)
