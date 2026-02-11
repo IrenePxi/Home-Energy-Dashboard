@@ -152,7 +152,7 @@ def render_electricity_price():
 def render_pv_forecast():
     # --- 2. PV Power Prediction Block ---
     with st.container(border=True):
-        st.markdown("#### ☀️ PV Power Prediction")
+        st.markdown('#### ☀️ PV Power Prediction <span style="color:#666; font-size:1rem; font-weight:400;">(16 panels × 400W)</span>', unsafe_allow_html=True)
         
         if st.button("🔄 Update Prediction", on_click=start_pv_update, key="btn_update_pv"):
             pass

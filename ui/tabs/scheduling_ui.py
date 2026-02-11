@@ -131,8 +131,8 @@ def render_scheduling(df_co2=None):
                  # Header Row: Icon + Name + Settings Button
                  c_head1, c_head2 = st.columns([0.9, 0.1])
                  with c_head1:
-                     tooltip_text = f"Rated Power: {active_power} kW\nDuration: {active_dur} h"
-                     st.markdown(f'<p class="sched-device-name" title="{tooltip_text}">🔌 {display_name.split(" (")[0]}</p>', unsafe_allow_html=True)
+                     specs_text = f"({active_power} kW · {active_dur} h)"
+                     st.markdown(f'<p class="sched-device-name">🔌 {display_name.split(" (")[0]} <span style="font-size: 0.9rem; color: #666; font-weight: 400;">{specs_text}</span></p>', unsafe_allow_html=True)
                  with c_head2:
                      if st.button("⚙️", key=f"btn_set_{dev_name}"):
                          if dialog_decorator:
