@@ -138,22 +138,11 @@ def PVmodel_pvlib(start_date, end_date, weather_data):
         inverter_parameters=inverter_parameters
     )
 
-    mc = ModelChain(
-        system, system.arrays[0], location=location, # Provide location if needed by some models
-        dc_model='pvwatts', ac_model='pvwatts',
-        aoi_model='physical', spectral_model='no_loss'
-    )
-    # ModelChain.run_model_from_poa() requires location to adhere to docs?
-    # Actually ModelChain signature is (system, location, ...)
-    # But I construct it above.
-    # In recent pvlib versions, location is part of ModelChain init.
-    
-    # Let's fix ModelChain init to match original script:
-    # mc = ModelChain(system, location, ...)
+    # Initialize ModelChain
     mc = ModelChain(
         system,
         location,
-        dc_model='pvwatts',  
+        dc_model='pvwatts',
         ac_model='pvwatts',
         aoi_model='physical',
         spectral_model='no_loss'
@@ -363,16 +352,13 @@ def run_pv_prediction():
     pv_forecast_result['DateTime'] = pv_forecast_result['DateTime'].astype(str)
     
     # MQTT Publish (Moved to mqtt_publisher.py)
-    # Return result to caller
-    return pv_forecast_result
+    # Return result to caller 
+    # (Removed early return to allow saving)
 
     # Save to CSV in results
-    # Use relative path from project root if possible, or common results dir logic
-    # In run_py case, cwd was project root.
-    # Here, we assume we want to write to "results/" in CWD (project root).
-    results_dir = os.path.join(os.getcwd(), "results")
-    os.makedirs(results_dir, exist_ok=True)
-    output_path = os.path.join(results_dir, "pv_prediction_result.csv")
+    # Use central results_dir function
+    output_path = results_dir() / "pv_prediction_result.csv"
+    results_dir().mkdir(exist_ok=True)
     
     # Ensure columns
     pv_forecast_result[["DateTime", "Corrected_PV"]].to_csv(output_path, index=False)

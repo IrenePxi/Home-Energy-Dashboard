@@ -261,7 +261,7 @@ def update_electricity_predictions():
     df_fut_w["is_weekend"] = df_fut_w["day_of_week"].apply(lambda x: 1 if x >= 5 else 0)
     df_fut_w = df_fut_w.sort_index()
 
-    preds = model.predict(df_fut_w)
+    preds = model.predict(df_fut_w[feats])
     df_fut_pred = pd.DataFrame({"SpotPriceDKK": preds}, index=pd.date_range(fut_start, fut_end, freq="h"))
 
     # 5. Process Output & Save
