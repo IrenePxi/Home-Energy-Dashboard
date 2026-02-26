@@ -181,7 +181,7 @@ def render_pv_forecast():
 
         try:
             df_pv = load_pv_predictions()
-            fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (W)"})
+            fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (kW)"})
             now = pd.Timestamp.now().round("1min")
             fig_pv.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
             

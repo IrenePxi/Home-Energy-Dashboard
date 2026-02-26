@@ -2,7 +2,8 @@ import sys
 import os
 from pathlib import Path
 import streamlit as st
-
+import uuid
+from services.user_metrics import log_heartbeat
 import ui.tabs.forecasts as kv_forecasts
 import ui.tabs.dt_real as kv_dt_real
 
@@ -13,7 +14,20 @@ st.set_page_config(
 )
 st.set_option("client.showSidebarNavigation", True)
 
-st.title("🏠 Home Energy Dashboard")
+# --- Active User Tracking ---
+if "user_session_id" not in st.session_state:
+    st.session_state.user_session_id = str(uuid.uuid4())
+
+# Log heartbeat
+active_count = log_heartbeat(st.session_state.user_session_id)
+
+# Header with Counter
+col_title, col_users = st.columns([6, 1])
+with col_title:
+    st.title("🏠 Home Energy Dashboard")
+with col_users:
+    st.metric("Active Users", active_count)
+    # st.caption(f"Active: {active_count}")
 
 # Initialize MQTT Connection (Backend)
 if "mqtt_client" not in st.session_state:
