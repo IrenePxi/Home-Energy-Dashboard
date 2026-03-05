@@ -14,6 +14,39 @@ st.set_page_config(
 )
 st.set_option("client.showSidebarNavigation", True)
 
+# --- Password Authentication ---
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    def password_entered():
+        # Safely access the password in session state
+        pwd = st.session_state.get("password", "")
+        if pwd == "FCCOGEN":
+            st.session_state["password_correct"] = True
+            # Clearing the widget state by resetting it
+            st.session_state["password"] = ""
+        else:
+            st.session_state["password_correct"] = False
+
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # Vertical offset
+    st.markdown("<br><br><br><br><br>", unsafe_allow_html=True)
+    
+    _, col_center, _ = st.columns([1, 1, 1])
+    with col_center:
+        with st.container(border=True):
+            st.title("🏠 Home Energy Dashboard")
+            st.text_input(
+                "Password", type="password", on_change=password_entered, key="password"
+            )
+            if "password_correct" in st.session_state:
+                st.error("😕 Password incorrect")
+    return False
+
+if not check_password():
+    st.stop()
+
 # --- Active User Tracking ---
 if "user_session_id" not in st.session_state:
     st.session_state.user_session_id = str(uuid.uuid4())

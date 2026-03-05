@@ -307,18 +307,10 @@ def render_gas_price():
                 if not df_plot.empty:
                     fig_gas = go.Figure()
                     
-                    # Purchase Price
                     fig_gas.add_trace(go.Scatter(
                         x=df_plot["GasDay"], y=df_plot["PurchasePriceDKK_kWh"],
                         mode='lines', name='Purchase Price',
                         line=dict(color='#d62728', width=2)
-                    ))
-                    
-                    # Sales Price
-                    fig_gas.add_trace(go.Scatter(
-                        x=df_plot["GasDay"], y=df_plot["SalesPriceDKK_kWh"],
-                        mode='lines', name='Sales Price',
-                        line=dict(color='#1f77b4', width=2, dash='dot')
                     ))
                     
                     # Highlight Today
