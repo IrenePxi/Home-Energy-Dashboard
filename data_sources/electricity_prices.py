@@ -50,12 +50,17 @@ def load_electricity_prices():
 def _fetch_dayahead_prices_latest(area: str = "DK1") -> pd.DataFrame:
     """Fetch latest day-ahead prices from EnergiDataService."""
     try:
-        r = requests.get(f"{EDS_PRICE_URL_NEW}?limit=200000", timeout=40, verify=certifi.where())
+        r = requests.get(f"{EDS_PRICE_URL_NEW}?limit=200000", timeout=(5, 15), verify=certifi.where())
         r.raise_for_status()
     except requests.exceptions.SSLError:
         warnings.warn(f"SSL verification failed for {EDS_PRICE_URL_NEW}. Retrying without verification.")
-        r = requests.get(f"{EDS_PRICE_URL_NEW}?limit=200000", timeout=40, verify=False)
-        r.raise_for_status()
+        try:
+            r = requests.get(f"{EDS_PRICE_URL_NEW}?limit=200000", timeout=(5, 15), verify=False)
+            r.raise_for_status()
+        except Exception:
+            return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
     
     recs = r.json().get("records", [])
     if not recs: return pd.DataFrame()
@@ -89,12 +94,17 @@ def _fetch_dayahead_prices_latest(area: str = "DK1") -> pd.DataFrame:
 def _fetch_elspot_prices(area: str = "DK1") -> pd.DataFrame:
     """Fetch historical spot prices from EnergiDataService."""
     try:
-        r = requests.get(f"{EDS_PRICE_URL_OLD}?limit=200000", timeout=40, verify=certifi.where())
+        r = requests.get(f"{EDS_PRICE_URL_OLD}?limit=200000", timeout=(5, 15), verify=certifi.where())
         r.raise_for_status()
     except requests.exceptions.SSLError:
         warnings.warn(f"SSL verification failed for {EDS_PRICE_URL_OLD}. Retrying without verification.")
-        r = requests.get(f"{EDS_PRICE_URL_OLD}?limit=200000", timeout=40, verify=False)
-        r.raise_for_status()
+        try:
+            r = requests.get(f"{EDS_PRICE_URL_OLD}?limit=200000", timeout=(5, 15), verify=False)
+            r.raise_for_status()
+        except Exception:
+            return pd.DataFrame()
+    except Exception:
+        return pd.DataFrame()
     
     df = pd.DataFrame.from_records(r.json().get("records", []))
     if df.empty or "HourDK" not in df or "PriceArea" not in df or "SpotPriceDKK" not in df:

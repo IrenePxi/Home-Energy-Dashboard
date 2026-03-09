@@ -11,7 +11,7 @@ def fetch_gas_prices(limit: int = 100) -> pd.DataFrame:
     """
     url = f"https://api.energidataservice.dk/dataset/GasDailyBalancingPrice?limit={limit}&sort=GasDay DESC"
     try:
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=(5, 10))
         response.raise_for_status()
         data = response.json()
         records = data.get("records", [])
@@ -27,5 +27,4 @@ def fetch_gas_prices(limit: int = 100) -> pd.DataFrame:
         
         return df
     except Exception as e:
-        st.error(f"Error fetching gas prices: {e}")
         return pd.DataFrame()

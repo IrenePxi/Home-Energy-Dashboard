@@ -27,12 +27,19 @@ def fetch_co2_for_day(period_start:date, period_end:date, area) -> pd.Series:
 
     url = "https://api.energidataservice.dk/dataset/CO2EmisProg?limit=200000"
     try:
-        r = requests.get(url, timeout=40, verify=certifi.where())
+        r = requests.get(url, timeout=(5, 15), verify=certifi.where())
         r.raise_for_status()
     except requests.exceptions.SSLError:
         warnings.warn(f"SSL verification failed for {url}. Retrying without verification.")
-        r = requests.get(url, timeout=40, verify=False)
-        r.raise_for_status()
+        try:
+            r = requests.get(url, timeout=(5, 15), verify=False)
+            r.raise_for_status()
+        except Exception as e:
+            warnings.warn(f"Failed to fetch CO2 for day: {e}")
+            return pd.Series(index=idx5, dtype=float, name="gCO2_per_kWh")
+    except Exception as e:
+        warnings.warn(f"Failed to fetch CO2 for day: {e}")
+        return pd.Series(index=idx5, dtype=float, name="gCO2_per_kWh")
     recs = r.json().get("records", [])
     if not recs:
         return pd.Series(index=idx5, dtype=float, name="gCO2_per_kWh")
@@ -111,7 +118,7 @@ def fetch_co2_prog(area: str = "DK1", horizon_hours: int = 48) -> pd.DataFrame:
     url = f"{EDS_CO2_PROG_URL}?limit={limit}"
     
     try:
-        r = requests.get(url, timeout=15)
+        r = requests.get(url, timeout=(5, 15))
         r.raise_for_status()
     except Exception as e:
         warnings.warn(f"Failed to fetch CO2 prognosis: {e}")

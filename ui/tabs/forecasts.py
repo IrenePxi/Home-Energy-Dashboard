@@ -94,6 +94,7 @@ def render_electricity_price():
                             st.rerun()
             else:
                 st.info("No hourly price data available for today.")
+                st.caption("⚠️ Data source unavailable — energidataservice.dk could not be reached. Prices will appear once the connection is restored.")
 
             # Line Chart
 
@@ -147,7 +148,11 @@ def render_electricity_price():
                 st.plotly_chart(fig, width='stretch', height=250, key="chart_price_trend")
 
         except Exception as e:
-            st.error(f"Error loading price data: {e}")
+            import requests
+            if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+                st.warning("⚠️ Data source unavailable — energidataservice.dk could not be reached.")
+            else:
+                st.error(f"Error loading price data: {e}")
 
 def render_pv_forecast():
     # --- 2. PV Power Prediction Block ---
@@ -285,10 +290,14 @@ def render_co2_forecast(df_co2=None):
                 fig_co2.update_yaxes(showgrid=True, griddash="dot")
                 st.plotly_chart(fig_co2, width='stretch', height=250, key="chart_co2_forecast")
             else:
-                st.info("CO2 data unavailable.")
+                st.warning("⚠️ Data source unavailable — energidataservice.dk could not be reached. CO₂ data will appear once the connection is restored.")
                 
         except Exception as e:
-            st.error(f"Error loading CO2 data: {e}")
+            import requests
+            if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+                st.warning("⚠️ Data source unavailable — energidataservice.dk could not be reached.")
+            else:
+                st.error(f"Error loading CO2 data: {e}")
 
 def render_gas_price():
     # --- 5. Natural Gas Balancing Price Block ---
@@ -331,9 +340,13 @@ def render_gas_price():
                     
                     st.plotly_chart(fig_gas, width='stretch', height=180, key="chart_gas_price")
                 else:
-                    st.info("No recent gas price data found.")
+                    st.warning("⚠️ Data source unavailable — energidataservice.dk could not be reached. Gas prices will appear once the connection is restored.")
             else:
-                st.info("Gas price data unavailable.")
+                st.warning("⚠️ Data source unavailable — energidataservice.dk could not be reached. Gas prices will appear once the connection is restored.")
                 
         except Exception as e:
-            st.error(f"Error loading gas price data: {e}")
+            import requests
+            if isinstance(e, (requests.exceptions.ConnectionError, requests.exceptions.Timeout)):
+                st.warning("⚠️ Data source unavailable — energidataservice.dk could not be reached.")
+            else:
+                st.error(f"Error loading gas price data: {e}")
