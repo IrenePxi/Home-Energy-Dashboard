@@ -186,6 +186,14 @@ def render_pv_forecast():
 
         try:
             df_pv = load_pv_predictions()
+
+            # Check if prediction data is stale (last date is before today)
+            latest_pv_dt = pd.to_datetime(df_pv["DateTime"]).max()
+            today_start = pd.Timestamp.now().normalize()
+            if latest_pv_dt < today_start:
+                days_stale = (today_start - latest_pv_dt.normalize()).days
+                st.warning(f"⚠️ PV prediction is outdated (last updated {days_stale} day(s) ago). Click **🔄 Update Prediction** above to refresh.")
+
             fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (kW)"})
             now = pd.Timestamp.now().round("1min")
             fig_pv.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
