@@ -170,19 +170,30 @@ def render_pv_forecast():
                     from services.mqtt_publisher import publish_pv_forecast
                     
                     df_res = run_pv_prediction()
-                    if not df_res.empty:
-                         if publish_pv_forecast(df_res):
-                             st.success("Done! Data published.")
-                         else:
-                             st.warning("Prediction done, but MQTT publish failed.")
+                    # run_pv_prediction returns False on failure, or a DataFrame on success
+                    if df_res is False or df_res is None:
+                        st.session_state["pv_update_msg"] = ("error", "Prediction failed — check that PV data files exist and weather API is reachable.")
+                    elif hasattr(df_res, 'empty') and not df_res.empty:
+                        if publish_pv_forecast(df_res):
+                            st.session_state["pv_update_msg"] = ("success", "Done! PV prediction updated and published.")
+                        else:
+                            st.session_state["pv_update_msg"] = ("warning", "Prediction complete, but MQTT publish failed (broker may not be reachable from this environment).")
                     else:
-                        st.error("Prediction failed. Check logs.")
+                        st.session_state["pv_update_msg"] = ("error", "Prediction returned empty results. Check logs.")
                 except Exception as e:
-                    st.error(f"Failed: {e}")
+                    st.session_state["pv_update_msg"] = ("error", f"Failed: {e}")
                 finally:
                     st.session_state["updating_pv"] = False
                     st.session_state["long_running_task"] = False
                     st.rerun()
+
+        # Show persistent result message from last update run
+        pv_msg = st.session_state.pop("pv_update_msg", None)
+        if pv_msg:
+            level, text = pv_msg
+            if level == "success": st.success(text)
+            elif level == "warning": st.warning(text)
+            else: st.error(text)
 
         try:
             df_pv = load_pv_predictions()
