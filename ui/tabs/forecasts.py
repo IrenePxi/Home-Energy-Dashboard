@@ -13,6 +13,7 @@ def start_price_update():
 
 def start_pv_update():
     st.session_state["updating_pv"] = True
+    st.session_state.pop("pv_update_msg", None)  # Clear previous result
 
 def render_electricity_price():
     # --- 1. Electricity Price Prediction Block ---
@@ -188,7 +189,7 @@ def render_pv_forecast():
                     st.rerun()
 
         # Show persistent result message from last update run
-        pv_msg = st.session_state.pop("pv_update_msg", None)
+        pv_msg = st.session_state.get("pv_update_msg", None)
         if pv_msg:
             level, text = pv_msg
             if level == "success": st.success(text)

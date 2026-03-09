@@ -300,8 +300,7 @@ def run_pv_prediction():
     pv_forc_path = resource_path(os.path.join("pv_data", "PV forecast hourly.csv"))
 
     if not os.path.exists(pv_gen_path):
-        print(f"Error: {pv_gen_path} not found")
-        return False
+        raise RuntimeError(f"PV training data file not found: {pv_gen_path}. Make sure 'data_sources/pv_data/' is committed to the repository.")
     
     pv_generation = pd.read_csv(pv_gen_path, parse_dates=["Time"], index_col="Time")
     pv_forecast = pd.read_csv(pv_forc_path, parse_dates=["Time"], index_col="Time")
@@ -320,8 +319,7 @@ def run_pv_prediction():
     weather_data = fetch_weather_data(location, start_date, end_date)
 
     if weather_data.empty:
-        print("Error: Could not fetch validation weather data.")
-        return False
+        raise RuntimeError("Could not fetch historical weather data from Open-Meteo (may be rate-limited or network unavailable). Try again in a minute.")
 
     merged_data = merge_pv_weather(pv_data, weather_data).sort_index()
 
@@ -335,8 +333,7 @@ def run_pv_prediction():
     
     weather_forecast = fetch_weather_data(location, forecast_start, forecast_end)
     if weather_forecast.empty:
-        print("Error: Could not fetch forecast weather data.")
-        return False
+        raise RuntimeError("Could not fetch forecast weather data from Open-Meteo (may be rate-limited or network unavailable). Try again in a minute.")
         
     weather_forecast["hour"] = weather_forecast.index.hour
     weather_forecast["month"] = weather_forecast.index.month
