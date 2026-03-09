@@ -7,6 +7,11 @@ from data_sources.electricity_prices import load_electricity_prices, load_unifie
 from data_sources.pv import load_pv_predictions
 from data_sources.gas import fetch_gas_prices
 
+_TZ = "Europe/Copenhagen"
+def _now_dk():
+    """Current wall-clock time in Europe/Copenhagen, returned tz-naive for chart use."""
+    return pd.Timestamp.now(tz=_TZ).replace(tzinfo=None)
+
 # Callbacks to lock autorefresh
 def start_price_update():
     st.session_state["updating_price"] = True
@@ -27,7 +32,7 @@ def render_electricity_price():
             df_price = load_unified_price_data()
             
             # Filter to today and tomorrow
-            today_start = pd.Timestamp.now().normalize()
+            today_start = _now_dk().normalize()
             tomorrow_end = today_start + pd.Timedelta(days=2)
             df_hourly_view = df_price[
                 (df_price["DateTime"] >= today_start) & 
@@ -53,7 +58,7 @@ def render_electricity_price():
                 
                 latest_dt = df_bar["DateTime"].max()
                 
-                now = pd.Timestamp.now().round("1min")
+                now = _now_dk().round("1min")
                 fig_bar.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
                 
                 fig_bar.update_layout(
@@ -100,8 +105,8 @@ def render_electricity_price():
             # Line Chart
 
             if not df_price.empty:
-                start_plot = pd.Timestamp.now() - pd.Timedelta(days=2)
-                end_plot = pd.Timestamp.now() + pd.Timedelta(days=3)
+                start_plot = _now_dk() - pd.Timedelta(days=2)
+                end_plot = _now_dk() + pd.Timedelta(days=3)
                 df_plot = df_price[(df_price["DateTime"] >= start_plot) & (df_price["DateTime"] <= end_plot)].copy()
                 
                 fig = go.Figure()
@@ -125,7 +130,7 @@ def render_electricity_price():
                     ))
                 
                 # Now line
-                now = pd.Timestamp.now().round("1min")
+                now = _now_dk().round("1min")
                 fig.add_shape(type="line", x0=now, y0=0, x1=now, y1=1, xref="x", yref="paper", line=dict(color="red", width=2, dash="dot"))
                 fig.add_annotation(x=now, y=1.05, xref="x", yref="paper", text="Now", showarrow=False, font=dict(color="red"))
 
@@ -201,13 +206,13 @@ def render_pv_forecast():
 
             # Check if prediction data is stale (last date is before today)
             latest_pv_dt = pd.to_datetime(df_pv["DateTime"]).max()
-            today_start = pd.Timestamp.now().normalize()
+            today_start = _now_dk().normalize()
             if latest_pv_dt < today_start:
                 days_stale = (today_start - latest_pv_dt.normalize()).days
                 st.warning(f"⚠️ PV prediction is outdated (last updated {days_stale} day(s) ago). Click **🔄 Update Prediction** above to refresh.")
 
             fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (kW)"})
-            now = pd.Timestamp.now().round("1min")
+            now = _now_dk().round("1min")
             fig_pv.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
             
             fig_pv.update_xaxes(
@@ -236,7 +241,7 @@ def render_weather_forecast():
         try:
             from data_sources.weather import fetch_weather_open_meteo
             LAT, LON = 57.048, 9.921
-            now = pd.Timestamp.now().round("1min")
+            now = _now_dk().round("1min")
             start_date = (now - pd.Timedelta(days=1)).normalize()
             end_date = (now + pd.Timedelta(days=4)).normalize()
             
@@ -285,7 +290,7 @@ def render_co2_forecast(df_co2=None):
             if df_co2 is not None and not df_co2.empty:
                 # Essential copy to avoid modifying the shared df
                 df_co2 = df_co2.copy()
-                today_start = pd.Timestamp.now().normalize()
+                today_start = _now_dk().normalize()
                 df_co2 = df_co2[df_co2["Time"] >= today_start]
                 
             if not df_co2.empty:
@@ -296,7 +301,7 @@ def render_co2_forecast(df_co2=None):
                     color_discrete_sequence=["#2ca02c"] # Green for CO2
                 )
                 
-                now = pd.Timestamp.now().round("1min")
+                now = _now_dk().round("1min")
                 fig_co2.add_vline(x=now, line_width=2, line_dash="dash", line_color="red", opacity=0.7)
                 fig_co2.add_annotation(x=now, y=df_co2["gCO2_per_kWh"].max(), text="Now", showarrow=False, yshift=10)
                 
@@ -330,7 +335,7 @@ def render_gas_price():
             
             if not df_gas.empty:
                 # Filter to recent 35 days (roughly 1 month + some room)
-                month_ago = pd.Timestamp.now().normalize() - pd.Timedelta(days=35)
+                month_ago = _now_dk().normalize() - pd.Timedelta(days=35)
                 df_plot = df_gas[df_gas["GasDay"] >= month_ago].copy()
                 
                 if not df_plot.empty:
@@ -343,7 +348,7 @@ def render_gas_price():
                     ))
                     
                     # Highlight Today
-                    now = pd.Timestamp.now().normalize()
+                    now = _now_dk().normalize()
                     fig_gas.add_vline(x=now, line_width=2, line_dash="dash", line_color="orange")
                     
                     fig_gas.update_layout(

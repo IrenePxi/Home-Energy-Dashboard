@@ -2,6 +2,11 @@ import pandas as pd
 import numpy as np
 from datetime import time as _time, datetime, timedelta
 
+_TZ = "Europe/Copenhagen"
+def _now_dk():
+    """Current wall-clock time in Europe/Copenhagen, tz-naive."""
+    return pd.Timestamp.now(tz=_TZ).replace(tzinfo=None)
+
 def find_best_interval(
     df_price: pd.DataFrame, 
     duration_hours: float, 
@@ -34,7 +39,7 @@ def find_best_interval(
     df_p = df_p.set_index("DateTime").sort_index()
     
     # Filter for future only (from now)
-    now = pd.Timestamp.now().floor("h")
+    now = _now_dk().floor("h")
     
     # Prep for Search
     # We'll search across all future data

@@ -5,6 +5,11 @@ from services.scheduling import find_best_interval
 from data_sources.electricity_prices import load_unified_price_data
 from data_sources.co2 import fetch_co2_prog
 
+_TZ = "Europe/Copenhagen"
+def _now_dk():
+    """Current wall-clock time in Europe/Copenhagen, tz-naive."""
+    return pd.Timestamp.now(tz=_TZ).replace(tzinfo=None)
+
 def render_scheduling(df_co2=None):
     with st.container(border=True):
         st.markdown("""
@@ -41,7 +46,7 @@ def render_scheduling(df_co2=None):
             return
 
         # Automatic Window: Today 00:00 to Tomorrow 06:00
-        today_start = pd.Timestamp.now().normalize()
+        today_start = _now_dk().normalize()
         deadline = today_start + pd.Timedelta(days=1, hours=6)
         
         st.markdown(f"💡 *Optimizing for the window:* **Today 00:00** — **Tomorrow 06:00**")

@@ -15,6 +15,11 @@ import json
 from datetime import datetime, timedelta
 from services.paths import results_dir
 
+_TZ = "Europe/Copenhagen"
+def _now_dk():
+    """Current wall-clock time in Europe/Copenhagen, tz-naive."""
+    return pd.Timestamp.now(tz=_TZ).replace(tzinfo=None)
+
 # ML Imports
 try:
     from sklearn.ensemble import RandomForestRegressor
@@ -122,7 +127,7 @@ def load_unified_price_data(area: str = "DK1") -> pd.DataFrame:
     """Loads unified electricity price data (Actual + Predicted) for UI."""
     # from DT_dashboard.services.data_io import load_electricity_prices # Removed
     
-    now = pd.Timestamp.now()
+    now = _now_dk()
     today_start = now.normalize()
     
     try:
@@ -276,7 +281,7 @@ def update_electricity_predictions():
 
     # 5. Process Output & Save
     # Only keep future from 'today' perspective for the output file
-    today = pd.Timestamp.now().normalize()
+    today = _now_dk().normalize()
     full_pred = df_fut_pred[df_fut_pred.index >= today].copy()
     
     # Add Tariff logic
