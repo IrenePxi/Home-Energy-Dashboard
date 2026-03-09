@@ -312,14 +312,91 @@ def run_pv_prediction():
     pv_data["Forecast"] = pv_data["Forecast"].apply(convert_power)
     pv_data.loc[pv_data["PV1"] < 0.2, "PV1"] = 0
 
-    # Get historical weather data
+    # ── Training weather data: incremental cache strategy ──────────────────────
+    # Load the existing cache (if any), then fetch ONLY the missing days
+    # from the archive API. This keeps each API call small (days, not months),
+    # which avoids rate limits even on Streamlit Cloud.
     location = Point(LAT, LON)
-    start_date = pv_data.index.min()
-    end_date = pv_data.index.max()
-    weather_data = fetch_weather_data(location, start_date, end_date)
+    training_start = pv_data.index.min()
+    training_end   = pv_data.index.max()
+
+    weather_cache_path = resource_path(os.path.join("pv_data", "weather_training_cache.csv"))
+    cached_df = pd.DataFrame()
+
+    # 1) Load existing cache
+    if os.path.exists(weather_cache_path):
+        try:
+            cached_df = pd.read_csv(weather_cache_path, index_col=0, parse_dates=True)
+            # Ensure index is tz-naive
+            if getattr(cached_df.index, "tz", None) is not None:
+                cached_df.index = cached_df.index.tz_localize(None)
+            print(f"[OK] Loaded weather cache: {cached_df.index.min().date()} → {cached_df.index.max().date()}")
+        except Exception as e:
+            print(f"Warning: Could not read weather cache, will rebuild: {e}")
+            cached_df = pd.DataFrame()
+
+    # 2) Determine which date range still needs to be fetched
+    ts_start = pd.Timestamp(training_start).normalize()
+    ts_end   = pd.Timestamp(training_end).normalize()
+
+    if cached_df.empty:
+        # No cache at all — fetch everything
+        fetch_from = ts_start
+        fetch_to   = ts_end
+    else:
+        cache_start = pd.Timestamp(cached_df.index.min()).normalize()
+        cache_end   = pd.Timestamp(cached_df.index.max()).normalize()
+        # Fetch head (before cache) if needed
+        # Fetch tail (after cache end) to get latest data
+        fetch_from = cache_end + pd.Timedelta(days=1)
+        fetch_to   = ts_end
+
+    # 3) Fetch the missing portion (empty if cache is fully up to date)
+    new_df = pd.DataFrame()
+    if fetch_from <= fetch_to:
+        print(f"Fetching weather delta: {fetch_from.date()} → {fetch_to.date()}")
+        new_df = fetch_weather_data(location, fetch_from, fetch_to)
+        if new_df.empty:
+            if cached_df.empty:
+                raise RuntimeError(
+                    "Could not fetch historical weather data from Open-Meteo "
+                    "(may be rate-limited or network unavailable). "
+                    "If on Streamlit Cloud, run 'Update Prediction' locally first "
+                    "to seed the weather cache, then commit and push."
+                )
+            else:
+                print("Warning: Could not fetch weather delta — using existing cache only.")
+        else:
+            # Ensure tz-naive
+            if getattr(new_df.index, "tz", None) is not None:
+                new_df.index = new_df.index.tz_localize(None)
+    else:
+        print("[OK] Weather cache is already up to date.")
+
+    # 4) Merge cache + new data, deduplicate, sort
+    parts = [df for df in [cached_df, new_df] if not df.empty]
+    if not parts:
+        raise RuntimeError("Weather training data is empty after all fetch attempts.")
+    weather_data = pd.concat(parts).sort_index()
+    weather_data = weather_data[~weather_data.index.duplicated(keep="last")]
+
+    # 5) Filter to the training range
+    weather_data = weather_data.loc[
+        (weather_data.index >= ts_start) & (weather_data.index <= ts_end + pd.Timedelta(hours=23))
+    ]
+
+    # 6) Save updated cache
+    if not new_df.empty:
+        try:
+            full_cache = pd.concat([cached_df, new_df]).sort_index()
+            full_cache = full_cache[~full_cache.index.duplicated(keep="last")]
+            full_cache.to_csv(weather_cache_path)
+            print(f"[OK] Weather cache updated → {weather_cache_path}")
+        except Exception as e:
+            print(f"Warning: Could not save weather cache: {e}")
 
     if weather_data.empty:
-        raise RuntimeError("Could not fetch historical weather data from Open-Meteo (may be rate-limited or network unavailable). Try again in a minute.")
+        raise RuntimeError("Weather training data is empty after filtering to training range.")
 
     merged_data = merge_pv_weather(pv_data, weather_data).sort_index()
 
