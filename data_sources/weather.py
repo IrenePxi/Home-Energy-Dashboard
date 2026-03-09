@@ -10,7 +10,7 @@ import requests
 import certifi
 import warnings
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=7200, show_spinner=False)
 def fetch_weather_open_meteo(lat: float, lon: float, start_date, end_date,
                              tz: str = "Europe/Copenhagen") -> pd.DataFrame:
     """
@@ -28,12 +28,25 @@ def fetch_weather_open_meteo(lat: float, lon: float, start_date, end_date,
             f"&timezone={tz.replace('/', '%2F')}"
         )
         try:
-            r = requests.get(url, timeout=40, verify=certifi.where())
+            r = requests.get(url, timeout=(5, 30), verify=certifi.where())
             r.raise_for_status()
+        except requests.exceptions.HTTPError as e:
+            if r.status_code == 429:
+                warnings.warn(f"Open-Meteo rate limit hit (429) for {base_url}. Try again shortly.")
+            else:
+                warnings.warn(f"HTTP error from {base_url}: {e}")
+            return pd.DataFrame()
         except requests.exceptions.SSLError:
             warnings.warn(f"SSL verification failed for {base_url}. Retrying without verification.")
-            r = requests.get(url, timeout=40, verify=False)
-            r.raise_for_status()
+            try:
+                r = requests.get(url, timeout=(5, 30), verify=False)
+                r.raise_for_status()
+            except Exception as e:
+                warnings.warn(f"Failed to fetch weather from {base_url}: {e}")
+                return pd.DataFrame()
+        except Exception as e:
+            warnings.warn(f"Failed to fetch weather from {base_url}: {e}")
+            return pd.DataFrame()
         h = r.json().get("hourly", {})
         if not h: return pd.DataFrame()
         df = pd.DataFrame(h).rename(columns={
@@ -60,6 +73,7 @@ def fetch_weather_open_meteo(lat: float, lon: float, start_date, end_date,
     if not parts:
         return pd.DataFrame(columns=["ghi","dni","dhi","temp","wind","prcp","wpgt","coco"])
     return pd.concat(parts).sort_index()
+
 
 
 def _clean_hourly_index(s: pd.Series) -> pd.Series:

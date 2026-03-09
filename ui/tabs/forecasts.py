@@ -251,10 +251,10 @@ def render_weather_forecast():
                 fig_temp.update_yaxes(showgrid=True, griddash="dot")
                 st.plotly_chart(fig_temp, width='stretch', height=250, key="chart_weather_temp")
             else:
-                st.info("Weather data unavailable.")
+                st.warning("⚠️ Weather data temporarily unavailable — open-meteo.com may be rate limiting requests. Data is cached for 2 hours; it will retry automatically on the next cache refresh.")
                 
         except Exception as e:
-            st.error(f"Error loading weather data: {e}")
+            st.warning("⚠️ Weather data temporarily unavailable. Will retry automatically.")
 
 def render_co2_forecast(df_co2=None):
     # --- 4. CO2 Emission Forecast Block ---
