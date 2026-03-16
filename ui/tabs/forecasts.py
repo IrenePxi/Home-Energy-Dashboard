@@ -12,6 +12,24 @@ def _now_dk():
     """Current wall-clock time in Europe/Copenhagen, returned tz-naive for chart use."""
     return pd.Timestamp.now(tz=_TZ).replace(tzinfo=None)
 
+_DAY_COLORS = ("rgba(230,240,255,0.55)", "rgba(255,243,224,0.55)")
+
+def _add_day_bands(fig, x_min, x_max, colors=_DAY_COLORS):
+    """Add alternating day-colored vertical bands behind the traces."""
+    try:
+        x_min, x_max = pd.Timestamp(x_min), pd.Timestamp(x_max)
+    except Exception:
+        return
+    day0 = x_min.normalize()
+    day_end = x_max.normalize() + pd.Timedelta(days=1)
+    days = pd.date_range(day0, day_end, freq="D")
+    for i in range(len(days) - 1):
+        fig.add_vrect(
+            x0=days[i], x1=days[i + 1],
+            fillcolor=colors[i % len(colors)],
+            opacity=1.0, line_width=0, layer="below",
+        )
+
 # Callbacks to lock autorefresh
 def start_price_update():
     st.session_state["updating_price"] = True
@@ -196,13 +214,15 @@ def render_electricity_price():
                     margin=dict(l=20, r=20, t=40, b=20),
                     uirevision="chart_state"
                 )
+                price_xmin = df_plot["DateTime"].min()
+                price_xmax = df_plot["DateTime"].max()
+                _add_day_bands(fig, price_xmin, price_xmax)
                 fig.update_xaxes(
-                    type="date", ticklabelmode="period", showgrid=True, griddash="dot",
-                    tickformatstops=[
-                        dict(dtickrange=[None, 1000*60*60*12], value="%H:%M\n%b %d"),
-                        dict(dtickrange=[1000*60*60*12, 1000*60*60*24*3], value="%H:%M\n%b %d"),
-                        dict(dtickrange=[1000*60*60*24*3, None], value="%b %d\n(%a)"),
-                    ]
+                    type="date", showgrid=True, griddash="dot",
+                    dtick=12 * 3600 * 1000,
+                    tick0=_now_dk().normalize(),
+                    tickformat="%H:%M\n%a %b %d",
+                    range=[price_xmin, price_xmax],
                 )
                 st.plotly_chart(fig, width='stretch', height=250, key="chart_price_trend")
 
@@ -277,13 +297,14 @@ def render_pv_forecast():
             now = _now_dk().round("1min")
             fig_pv.add_vline(x=now, line_width=2, line_dash="dash", line_color="red")
             
+            pv_xmin, pv_xmax = df_pv["DateTime"].min(), df_pv["DateTime"].max()
+            _add_day_bands(fig_pv, pv_xmin, pv_xmax)
             fig_pv.update_xaxes(
-                type="date", ticklabelmode="period", showgrid=True, griddash="dot",
-                tickformatstops=[
-                    dict(dtickrange=[None, 1000*60*60*12], value="%H:%M\n%b %d"),
-                    dict(dtickrange=[1000*60*60*12, 1000*60*60*24*3], value="%H:%M\n%b %d"),
-                    dict(dtickrange=[1000*60*60*24*3, None], value="%b %d"),
-                ]
+                type="date", showgrid=True, griddash="dot",
+                dtick=12 * 3600 * 1000,
+                tick0=_now_dk().normalize(),
+                tickformat="%H:%M\n%a %b %d",
+                range=[pv_xmin, pv_xmax],
             )
             fig_pv.update_layout(
                 hovermode="x unified", 
@@ -326,7 +347,16 @@ def render_weather_forecast():
                     margin=dict(l=20, r=20, t=40, b=20),
                     uirevision="chart_state"
                 )
-                fig_temp.update_xaxes(showgrid=True, griddash="dot", tickformat="%H:%M\n%b %d")
+                wx_xmin = df_weather.reset_index()["time"].min()
+                wx_xmax = df_weather.reset_index()["time"].max()
+                _add_day_bands(fig_temp, wx_xmin, wx_xmax)
+                fig_temp.update_xaxes(
+                    showgrid=True, griddash="dot",
+                    dtick=12 * 3600 * 1000,
+                    tick0=_now_dk().normalize(),
+                    tickformat="%H:%M\n%a %b %d",
+                    range=[wx_xmin, wx_xmax],
+                )
                 fig_temp.update_yaxes(showgrid=True, griddash="dot")
                 st.plotly_chart(fig_temp, width='stretch', height=250, key="chart_weather_temp")
             else:
@@ -373,7 +403,15 @@ def render_co2_forecast(df_co2=None):
                     margin=dict(l=20, r=20, t=40, b=20),
                     uirevision="chart_state"
                 )
-                fig_co2.update_xaxes(showgrid=True, griddash="dot", tickformat="%H:%M\n%b %d")
+                co2_xmin, co2_xmax = df_co2["Time"].min(), df_co2["Time"].max()
+                _add_day_bands(fig_co2, co2_xmin, co2_xmax)
+                fig_co2.update_xaxes(
+                    showgrid=True, griddash="dot",
+                    dtick=12 * 3600 * 1000,
+                    tick0=_now_dk().normalize(),
+                    tickformat="%H:%M\n%a %b %d",
+                    range=[co2_xmin, co2_xmax],
+                )
                 fig_co2.update_yaxes(showgrid=True, griddash="dot")
                 st.plotly_chart(fig_co2, width='stretch', height=250, key="chart_co2_forecast")
             else:
