@@ -149,27 +149,36 @@ def load_unified_price_data(area: str = "DK1") -> pd.DataFrame:
         df_pred = load_electricity_prices()
         df_pred = df_pred[["DateTime", "SpotPrice_DKK_per_kWh"]].copy()
         df_pred["Source"] = "Predicted"
-        df_pred = df_pred[df_pred["DateTime"] > latest_actual_date]
+        # Keep predictions for today AND future
+        df_pred = df_pred[df_pred["DateTime"] >= today_start]
     except:
         df_pred = pd.DataFrame()
     
-    if not df_actual.empty and not df_pred.empty:
-        df_combined = pd.concat([df_actual, df_pred], ignore_index=True)
-    elif not df_actual.empty:
-        df_combined = df_actual
-    elif not df_pred.empty:
-        df_combined = df_pred
-    else:
+    if df_actual.empty and df_pred.empty:
         return pd.DataFrame(columns=["DateTime", "SpotPrice_DKK_per_kWh", "Source"])
-    
-    df_combined = df_combined.sort_values("DateTime").reset_index(drop=True)
-    if not df_combined.empty:
-        start_time = df_combined["DateTime"].min()
-        end_time = df_combined["DateTime"].max()
+
+    # Process reindexing separately for each source to handle overlapping time ranges
+    parts = []
+    for source_name, df_source in [("Actual", df_actual), ("Predicted", df_pred)]:
+        if df_source.empty: continue
+        
+        # Sort and deduplicate
+        df_s = df_source.sort_values("DateTime").drop_duplicates("DateTime").set_index("DateTime")
+        
+        # Reindex to 1-minute frequency
+        start_time = df_s.index.min()
+        end_time = df_s.index.max()
         minute_range = pd.date_range(start=start_time, end=end_time, freq="1min")
-        df_combined = df_combined.set_index("DateTime").reindex(minute_range, method="ffill")
-        df_combined = df_combined.reset_index().rename(columns={"index": "DateTime"})
-        return df_combined
+        
+        df_s = df_s.reindex(minute_range, method="ffill")
+        df_s = df_s.reset_index().rename(columns={"index": "DateTime"})
+        df_s["Source"] = source_name
+        parts.append(df_s)
+    
+    if not parts:
+        return pd.DataFrame(columns=["DateTime", "SpotPrice_DKK_per_kWh", "Source"])
+        
+    df_combined = pd.concat(parts, ignore_index=True).sort_values(["DateTime", "Source"])
     return df_combined
 
 
@@ -235,40 +244,65 @@ def _merge_ml_data(electricity_data, weather_data):
     return merged, feature_cols, target_cols
 
 def update_electricity_predictions():
-    """Run full ML prediction pipeline and save results."""
-    print("Starting Electricity Price Prediction...")
+    """Run refined ML prediction pipeline: Validation -> Metrics -> Retrain -> Predict."""
+    print("Starting Refined Electricity Price Prediction Pipeline...")
     
-    # 1. Fetch Prices
+    # 1. Fetch Data
     df_el = fetch_electricity_prices_for_ml()
     limit_date = pd.Timestamp("2025-09-30")
     df_el = df_el[df_el.index >= limit_date]
     if not df_el.empty: df_el = df_el.resample("h").mean()
 
-    # 2. Fetch Weather
-    # 2. Fetch Weather
     df_weather = _get_weather_unified(df_el.index.min(), df_el.index.max())
-
-    # 3. Train
     merged, feats, targets = _merge_ml_data(df_el, df_weather)
     X, y = merged[feats], merged[targets]
-    
-    test_hours = 24
-    X_train, X_test = X.iloc[:-test_hours], X.iloc[-test_hours:]
-    y_train, y_test = y.iloc[:-test_hours], y.iloc[-test_hours:]
-    
+
     # Clean NaNs
-    bad_mask = ~np.isfinite(pd.to_numeric(y_train.squeeze(), errors='coerce'))
-    X_train = X_train.drop(index=y_train.index[bad_mask])
-    y_train = y_train.drop(index=y_train.index[bad_mask])
+    bad_mask = ~np.isfinite(pd.to_numeric(y.squeeze(), errors='coerce'))
+    X = X.drop(index=y.index[bad_mask])
+    y = y.drop(index=y.index[bad_mask])
 
-    model = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=6, 
-                         subsample=0.8, colsample_bytree=0.8, objective='reg:squarederror', random_state=42)
-    model.fit(X_train, y_train.values.ravel())
+    # 2. Validation Split (Last 24h)
+    test_hours = 24
+    X_train, X_val = X.iloc[:-test_hours], X.iloc[-test_hours:]
+    y_train, y_val = y.iloc[:-test_hours], y.iloc[-test_hours:]
 
-    # 4. Predict Future (3 days)
-    end_date = df_el.index.max()
-    fut_start = end_date + timedelta(hours=1)
-    fut_end = fut_start + timedelta(days=3) - timedelta(hours=1)
+    # 3. Train Model A (Validation Model)
+    model_val = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=6, 
+                             subsample=0.8, colsample_bytree=0.8, objective='reg:squarederror', random_state=42)
+    model_val.fit(X_train, y_train.values.ravel())
+
+    # 4. Predict Held-out 24h and Calc Metrics
+    val_preds = model_val.predict(X_val)
+    y_val_arr = y_val.values.ravel()
+    
+    mae = float(np.mean(np.abs(y_val_arr - val_preds)))
+    rmse = float(np.sqrt(np.mean((y_val_arr - val_preds)**2)))
+    # MAPE handling zeros/near-zeros
+    mape = float(np.mean(np.abs((y_val_arr - val_preds) / np.maximum(y_val_arr, 0.01))) * 100)
+
+    metrics = {
+        "mae": round(mae, 4),
+        "rmse": round(rmse, 4),
+        "mape_pct": round(mape, 2),
+        "last_updated": _now_dk().strftime("%Y-%m-%d %H:%M:%S")
+    }
+
+    # 5. Save Metrics
+    metrics_path = results_dir() / "prediction_metrics.json"
+    with open(metrics_path, "w") as f:
+        json.dump(metrics, f, indent=4)
+    print(f"Metrics saved: {metrics}")
+
+    # 6. Retrain Model B on ALL data
+    model_final = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=6, 
+                               subsample=0.8, colsample_bytree=0.8, objective='reg:squarederror', random_state=42)
+    model_final.fit(X, y.values.ravel())
+
+    # 7. Predict Future (4 days: Today + 3 future)
+    today_start = _now_dk().normalize()
+    fut_start = today_start
+    fut_end = fut_start + timedelta(days=4) - timedelta(hours=1)
     
     df_fut_w = _get_weather_unified(fut_start, fut_end)
     df_fut_w["hour"] = df_fut_w.index.hour
@@ -276,15 +310,18 @@ def update_electricity_predictions():
     df_fut_w["is_weekend"] = df_fut_w["day_of_week"].apply(lambda x: 1 if x >= 5 else 0)
     df_fut_w = df_fut_w.sort_index()
 
-    preds = model.predict(df_fut_w[feats])
-    df_fut_pred = pd.DataFrame({"SpotPriceDKK": preds}, index=pd.date_range(fut_start, fut_end, freq="h"))
-
-    # 5. Process Output & Save
-    # Only keep future from 'today' perspective for the output file
-    today = _now_dk().normalize()
-    full_pred = df_fut_pred[df_fut_pred.index >= today].copy()
+    future_preds = model_final.predict(df_fut_w[feats])
     
-    # Add Tariff logic
+    # 8. Combine Validation Predictions (for Today comparison) and Future predictions
+    df_val_pred = pd.DataFrame({"SpotPriceDKK": val_preds}, index=y_val.index)
+    df_fut_pred = pd.DataFrame({"SpotPriceDKK": future_preds}, index=pd.date_range(fut_start, fut_end, freq="h"))
+    
+    # Merge them, preferring fut_pred if overlap
+    df_combined_pred = pd.concat([df_val_pred, df_fut_pred])
+    df_combined_pred = df_combined_pred.sort_index()
+    df_combined_pred = df_combined_pred[~df_combined_pred.index.duplicated(keep='last')]
+
+    # Process Output
     def calc_tariff(row):
         h, m = row.name.hour, row.name.month
         is_summer = 4 <= m <= 9
@@ -292,20 +329,18 @@ def update_electricity_predictions():
         elif 17 <= h < 21: return 33.80 if is_summer else 78.01
         else: return 13.00 if is_summer else 26.00
     
-    full_pred["SpotPrice_DKK_per_kWh"] = full_pred["SpotPriceDKK"] / 1000
-    full_pred["Tariff_DKK"] = full_pred.apply(calc_tariff, axis=1) / 100
-    full_pred["TotalPrice"] = full_pred["SpotPrice_DKK_per_kWh"] + full_pred["Tariff_DKK"]
-    full_pred["Source"] = "Predicted"
-    full_pred.index.name = "DateTime"
+    df_combined_pred["SpotPrice_DKK_per_kWh"] = df_combined_pred["SpotPriceDKK"] / 1000
+    df_combined_pred["Tariff_DKK"] = df_combined_pred.apply(calc_tariff, axis=1) / 100
+    df_combined_pred["TotalPrice"] = df_combined_pred["SpotPrice_DKK_per_kWh"] + df_combined_pred["Tariff_DKK"]
+    df_combined_pred["Source"] = "Predicted"
+    df_combined_pred.index.name = "DateTime"
 
-    df_out = full_pred.reset_index()
+    df_out = df_combined_pred.reset_index()
     
     # Save to CSV
     out_path = results_dir() / "Electricity_price_prediction_result.csv"
     cols = [c for c in ["DateTime", "SpotPrice_DKK_per_kWh", "TotalPrice", "Source"] if c in df_out.columns]
     df_out[cols].to_csv(out_path, index=False)
-    print(f"Saved predictions to {out_path}")
+    print(f"Saved merged predictions to {out_path}")
 
-    # 6. Publish MQTT (Moved to mqtt_publisher.py)
-    # Return result to caller
     return df_out

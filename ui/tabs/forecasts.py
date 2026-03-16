@@ -25,6 +25,23 @@ def render_electricity_price():
     with st.container(border=True):
         st.markdown("#### 💡 Electricity Price Prediction")
         
+        # --- Accuracy Metrics Display ---
+        from services.paths import results_dir
+        metrics_file = results_dir() / "prediction_metrics.json"
+        if metrics_file.exists():
+            try:
+                with open(metrics_file, "r") as f:
+                    m = json.load(f)
+                
+                # Create 3 columns for metrics
+                c1, c2, c3 = st.columns(3)
+                c1.metric("MAE (Accuracy)", f"{m['mae']} DKK")
+                c2.metric("RMSE", f"{m['rmse']}")
+                c3.metric("MAPE", f"{m['mape_pct']}%")
+                st.caption(f"Last validated on {m['last_updated']} (held-out 24h test)")
+            except:
+                pass
+
         # Display Price Charts
 
         try:
@@ -43,6 +60,39 @@ def render_electricity_price():
             if not df_hourly_view.empty:
                 # Bar chart logic
                 df_bar = df_hourly_view.set_index("DateTime")[["SpotPrice_DKK_per_kWh"]].resample("h").mean().reset_index()
+                
+                # --- Auto Update Logic for El Price ---
+                now_dk = _now_dk()
+                
+                # Helper to check file age
+                from services.paths import results_dir
+                price_file = results_dir() / "Electricity_price_prediction_result.csv"
+                file_age_hours = 999
+                if price_file.exists():
+                    file_age_hours = (now_dk.timestamp() - price_file.stat().st_mtime) / 3600
+
+                # Determine if we need an update
+                latest_act = df_price[df_price["Source"] == "Actual"]["DateTime"].max() if not df_price.empty else pd.Timestamp(0)
+                latest_pred = df_price[df_price["Source"] == "Predicted"]["DateTime"].max() if not df_price.empty else pd.Timestamp(0)
+                
+                # Check for "Forward Leap": if actual data exists for tomorrow, but prediction was made when we only had today's data
+                # Or if the prediction doesn't cover "Tomorrow + 1 day"
+                # Or if the file is more than 4 hours old
+                needs_update = False
+                if latest_pred < (now_dk.normalize() + pd.Timedelta(days=2)):
+                    needs_update = True
+                elif file_age_hours > 4:
+                    needs_update = True
+                elif latest_act > (now_dk.normalize() + pd.Timedelta(hours=12)): # We have tomorrow's prices (DK price release)
+                    # If the file hasn't been updated since those prices were released
+                    pass # We trust file_age or tomorrow_coverage mostly
+
+                if not st.session_state.get("updating_price", False) and not st.session_state.get("price_auto_updated", False):
+                    if needs_update:
+                        st.session_state["updating_price"] = True
+                        st.session_state["price_auto_updated"] = True
+                        st.rerun()
+
                 threshold = df_bar["SpotPrice_DKK_per_kWh"].quantile(0.75)
                 df_bar["Color"] = df_bar["SpotPrice_DKK_per_kWh"].apply(lambda x: "#FFD700" if x >= threshold else "#1f77b4")
                 
@@ -71,10 +121,6 @@ def render_electricity_price():
                 )
                 st.plotly_chart(fig_bar, width='stretch', height=250, key="chart_price_bar")
                 
-                # Relocated Button for Prediction
-                if st.button("🔄 Update Prediction", on_click=start_price_update, key="btn_update_price"):
-                    pass
-                
                 # Logic for running the Price ML script
                 if st.session_state.get("updating_price", False):
                     st.session_state["long_running_task"] = True
@@ -97,16 +143,23 @@ def render_electricity_price():
                         finally:
                             st.session_state["updating_price"] = False
                             st.session_state["long_running_task"] = False
+                            st.session_state["price_auto_updated"] = True # Mark as done
                             st.rerun()
             else:
                 st.info("No hourly price data available for today.")
                 st.caption("⚠️ Data source unavailable — energidataservice.dk could not be reached. Prices will appear once the connection is restored.")
 
+                # If no data at all, maybe try auto-update once
+                if not st.session_state.get("updating_price", False) and not st.session_state.get("price_auto_updated", False):
+                    st.session_state["updating_price"] = True
+                    st.session_state["price_auto_updated"] = True
+                    st.rerun()
+
             # Line Chart
 
             if not df_price.empty:
                 start_plot = _now_dk() - pd.Timedelta(days=2)
-                end_plot = _now_dk() + pd.Timedelta(days=3)
+                end_plot = _now_dk() + pd.Timedelta(days=4)
                 df_plot = df_price[(df_price["DateTime"] >= start_plot) & (df_price["DateTime"] <= end_plot)].copy()
                 
                 fig = go.Figure()
@@ -135,7 +188,7 @@ def render_electricity_price():
                 fig.add_annotation(x=now, y=1.05, xref="x", yref="paper", text="Now", showarrow=False, font=dict(color="red"))
 
                 fig.update_layout(
-                    title="Price Forecast Trend",
+                    title="Price Forecast Trend & Accuracy Analysis",
                     yaxis_title="DKK/kWh",
                     hovermode="x unified",
                     xaxis_rangeslider_visible=False,
@@ -165,9 +218,6 @@ def render_pv_forecast():
     with st.container(border=True):
         st.markdown('#### ☀️ PV Power Prediction <span style="color:#666; font-size:1rem; font-weight:400;">(16 panels × 400W)</span>', unsafe_allow_html=True)
         
-        if st.button("🔄 Update Prediction", on_click=start_pv_update, key="btn_update_pv"):
-            pass
-
         if st.session_state.get("updating_pv", False):
             st.session_state["long_running_task"] = True
             with st.spinner("Running PV prediction script..."):
@@ -204,12 +254,24 @@ def render_pv_forecast():
         try:
             df_pv = load_pv_predictions()
 
-            # Check if prediction data is stale (last date is before today)
+            # Check if prediction data is stale or file is old
             latest_pv_dt = pd.to_datetime(df_pv["DateTime"]).max()
             today_start = _now_dk().normalize()
-            if latest_pv_dt < today_start:
-                days_stale = (today_start - latest_pv_dt.normalize()).days
-                st.warning(f"⚠️ PV prediction is outdated (last updated {days_stale} day(s) ago). Click **🔄 Update Prediction** above to refresh.")
+            
+            from services.paths import results_dir
+            pv_file = results_dir() / "pv_prediction_result.csv"
+            pv_file_age_hours = (pd.Timestamp.now().timestamp() - pv_file.stat().st_mtime) / 3600 if pv_file.exists() else 999
+
+            if latest_pv_dt < (today_start + pd.Timedelta(days=2)) or pv_file_age_hours > 4:
+                if latest_pv_dt < today_start:
+                    days_stale = (today_start - latest_pv_dt.normalize()).days
+                    st.warning(f"⚠️ PV prediction is outdated (last updated {days_stale} day(s) ago). refreshing automatically...")
+                
+                # --- Auto Update Logic for PV ---
+                if not st.session_state.get("updating_pv", False) and not st.session_state.get("pv_auto_updated", False):
+                    st.session_state["updating_pv"] = True
+                    st.session_state["pv_auto_updated"] = True
+                    st.rerun()
 
             fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (kW)"})
             now = _now_dk().round("1min")
