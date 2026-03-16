@@ -6,6 +6,7 @@ import uuid
 from services.user_metrics import log_heartbeat
 import ui.tabs.forecasts as kv_forecasts
 import ui.tabs.dt_real as kv_dt_real
+import ui.tabs.data_guide as kv_data_guide
 
 st.set_page_config(
     page_title="Home Energy Dashboard",
@@ -103,3 +104,6 @@ with r2_col3:
     # Import here to avoid circular dependencies if any
     import ui.tabs.scheduling_ui as kv_scheduling
     kv_scheduling.render_scheduling(df_co2=df_co2_shared)
+
+# Row 3: Data guide (full width)
+kv_data_guide.render_data_guide()
