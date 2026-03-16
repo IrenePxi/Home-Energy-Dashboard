@@ -244,103 +244,131 @@ def _merge_ml_data(electricity_data, weather_data):
     return merged, feature_cols, target_cols
 
 def update_electricity_predictions():
-    """Run refined ML prediction pipeline: Validation -> Metrics -> Retrain -> Predict."""
-    print("Starting Refined Electricity Price Prediction Pipeline...")
-    
-    # 1. Fetch Data
+    """Two-step ML pipeline that adapts to whether tomorrow's prices are available.
+
+    Tomorrow NOT available (before ~13:00):
+      held-out = today (24h), future = 72h after today.
+      Curve = today held-out prediction + 72h future.
+
+    Tomorrow IS available (after ~13:00):
+      held-out = today + tomorrow (48h, both genuinely unseen by val model),
+      metrics computed on last 24h (tomorrow) only,
+      future = 72h after tomorrow.
+      Curve = today held-out + tomorrow held-out + 72h future.
+    """
+    print("Starting Electricity Price Prediction Pipeline...")
+
+    # ── 1. Fetch actual prices + weather, merge features ──────────────
     df_el = fetch_electricity_prices_for_ml()
     limit_date = pd.Timestamp("2025-09-30")
     df_el = df_el[df_el.index >= limit_date]
-    if not df_el.empty: df_el = df_el.resample("h").mean()
+    if not df_el.empty:
+        df_el = df_el.resample("h").mean()
+
+    now = _now_dk()
+    today_start = now.normalize()
+    tomorrow_start = today_start + timedelta(days=1)
+
+    tomorrow_available = df_el.index.max() >= tomorrow_start
 
     df_weather = _get_weather_unified(df_el.index.min(), df_el.index.max())
     merged, feats, targets = _merge_ml_data(df_el, df_weather)
     X, y = merged[feats], merged[targets]
 
-    # Clean NaNs
     bad_mask = ~np.isfinite(pd.to_numeric(y.squeeze(), errors='coerce'))
     X = X.drop(index=y.index[bad_mask])
     y = y.drop(index=y.index[bad_mask])
 
-    # 2. Validation Split (Last 24h)
-    test_hours = 24
-    X_train, X_val = X.iloc[:-test_hours], X.iloc[-test_hours:]
-    y_train, y_val = y.iloc[:-test_hours], y.iloc[-test_hours:]
+    # ── 2. Held-out split ─────────────────────────────────────────────
+    #   tomorrow NOT available → hold out 24h (today)
+    #   tomorrow IS available  → hold out 48h (today + tomorrow)
+    hold_hours = 48 if tomorrow_available else 24
+    hold_hours = min(hold_hours, len(X) - 24)  # keep ≥24h for training
 
-    # 3. Train Model A (Validation Model)
-    model_val = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=6, 
-                             subsample=0.8, colsample_bytree=0.8, objective='reg:squarederror', random_state=42)
+    X_train = X.iloc[:-hold_hours]
+    X_held  = X.iloc[-hold_hours:]
+    y_train = y.iloc[:-hold_hours]
+    y_held  = y.iloc[-hold_hours:]
+
+    # ── 3. Train validation model (has NOT seen held-out data) ────────
+    _xgb_params = dict(
+        n_estimators=300, learning_rate=0.05, max_depth=6,
+        subsample=0.8, colsample_bytree=0.8,
+        objective='reg:squarederror', random_state=42,
+    )
+    model_val = XGBRegressor(**_xgb_params)
     model_val.fit(X_train, y_train.values.ravel())
 
-    # 4. Predict Held-out 24h and Calc Metrics
-    val_preds = model_val.predict(X_val)
-    y_val_arr = y_val.values.ravel()
-    
-    mae = float(np.mean(np.abs(y_val_arr - val_preds)))
-    rmse = float(np.sqrt(np.mean((y_val_arr - val_preds)**2)))
-    # MAPE handling zeros/near-zeros
-    mape = float(np.mean(np.abs((y_val_arr - val_preds) / np.maximum(y_val_arr, 0.01))) * 100)
+    # ── 4. Predict held-out period ────────────────────────────────────
+    held_preds = model_val.predict(X_held)
+
+    # ── 5. Metrics on last 24h of held-out only ──────────────────────
+    y_met = y_held.iloc[-24:].values.ravel()
+    p_met = held_preds[-24:]
+
+    mae  = float(np.mean(np.abs(y_met - p_met)))
+    rmse = float(np.sqrt(np.mean((y_met - p_met) ** 2)))
+    mape = float(np.mean(np.abs((y_met - p_met) / np.maximum(np.abs(y_met), 0.01))) * 100)
 
     metrics = {
         "mae": round(mae, 4),
         "rmse": round(rmse, 4),
         "mape_pct": round(mape, 2),
-        "last_updated": _now_dk().strftime("%Y-%m-%d %H:%M:%S")
+        "last_updated": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "tomorrow_available": tomorrow_available,
     }
-
-    # 5. Save Metrics
     metrics_path = results_dir() / "prediction_metrics.json"
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=4)
     print(f"Metrics saved: {metrics}")
 
-    # 6. Retrain Model B on ALL data
-    model_final = XGBRegressor(n_estimators=300, learning_rate=0.05, max_depth=6, 
-                               subsample=0.8, colsample_bytree=0.8, objective='reg:squarederror', random_state=42)
+    # ── 6. Retrain final model on ALL available data ──────────────────
+    model_final = XGBRegressor(**_xgb_params)
     model_final.fit(X, y.values.ravel())
 
-    # 7. Predict Future (4 days: Today + 3 future)
-    today_start = _now_dk().normalize()
-    fut_start = today_start
-    fut_end = fut_start + timedelta(days=4) - timedelta(hours=1)
-    
-    df_fut_w = _get_weather_unified(fut_start, fut_end)
-    df_fut_w["hour"] = df_fut_w.index.hour
-    df_fut_w["day_of_week"] = df_fut_w.index.dayofweek
-    df_fut_w["is_weekend"] = df_fut_w["day_of_week"].apply(lambda x: 1 if x >= 5 else 0)
-    df_fut_w = df_fut_w.sort_index()
+    # ── 7. Predict next 72h from end of actual data ──────────────────
+    fut_start = y.index.max().ceil("h") + timedelta(hours=1)
+    fut_end   = fut_start + timedelta(hours=71)
 
-    future_preds = model_final.predict(df_fut_w[feats])
-    
-    # 8. Combine Validation Predictions (for Today comparison) and Future predictions
-    df_val_pred = pd.DataFrame({"SpotPriceDKK": val_preds}, index=y_val.index)
-    df_fut_pred = pd.DataFrame({"SpotPriceDKK": future_preds}, index=pd.date_range(fut_start, fut_end, freq="h"))
-    
-    # Merge them, preferring fut_pred if overlap
-    df_combined_pred = pd.concat([df_val_pred, df_fut_pred])
-    df_combined_pred = df_combined_pred.sort_index()
+    df_fut_w = _get_weather_unified(fut_start, fut_end)
+    df_fut_pred = pd.DataFrame()
+    if not df_fut_w.empty:
+        df_fut_w["hour"]        = df_fut_w.index.hour
+        df_fut_w["day_of_week"] = df_fut_w.index.dayofweek
+        df_fut_w["is_weekend"]  = df_fut_w["day_of_week"].apply(lambda x: 1 if x >= 5 else 0)
+        df_fut_w = df_fut_w.sort_index()
+        future_preds = model_final.predict(df_fut_w[feats])
+        df_fut_pred = pd.DataFrame({"SpotPriceDKK": future_preds}, index=df_fut_w.index)
+
+    # ── 8. Combine: held-out predictions + 72h future ─────────────────
+    df_held_pred = pd.DataFrame({"SpotPriceDKK": held_preds}, index=y_held.index)
+
+    parts = [df for df in [df_held_pred, df_fut_pred] if not df.empty]
+    if not parts:
+        return pd.DataFrame()
+
+    df_combined_pred = pd.concat(parts).sort_index()
     df_combined_pred = df_combined_pred[~df_combined_pred.index.duplicated(keep='last')]
 
-    # Process Output
+    # ── Post-process ──────────────────────────────────────────────────
     def calc_tariff(row):
         h, m = row.name.hour, row.name.month
         is_summer = 4 <= m <= 9
         if 0 <= h < 6: return 8.67
         elif 17 <= h < 21: return 33.80 if is_summer else 78.01
         else: return 13.00 if is_summer else 26.00
-    
+
     df_combined_pred["SpotPrice_DKK_per_kWh"] = df_combined_pred["SpotPriceDKK"] / 1000
-    df_combined_pred["Tariff_DKK"] = df_combined_pred.apply(calc_tariff, axis=1) / 100
-    df_combined_pred["TotalPrice"] = df_combined_pred["SpotPrice_DKK_per_kWh"] + df_combined_pred["Tariff_DKK"]
-    df_combined_pred["Source"] = "Predicted"
-    df_combined_pred.index.name = "DateTime"
+    df_combined_pred["Tariff_DKK"]  = df_combined_pred.apply(calc_tariff, axis=1) / 100
+    df_combined_pred["TotalPrice"]  = df_combined_pred["SpotPrice_DKK_per_kWh"] + df_combined_pred["Tariff_DKK"]
+    df_combined_pred["Source"]      = "Predicted"
+    df_combined_pred.index.name     = "DateTime"
 
     df_out = df_combined_pred.reset_index()
-    
-    # Save to CSV
+
     out_path = results_dir() / "Electricity_price_prediction_result.csv"
     cols = [c for c in ["DateTime", "SpotPrice_DKK_per_kWh", "TotalPrice", "Source"] if c in df_out.columns]
     df_out[cols].to_csv(out_path, index=False)
-    print(f"Saved merged predictions to {out_path}")
+    print(f"Saved predictions to {out_path}")
 
     return df_out
