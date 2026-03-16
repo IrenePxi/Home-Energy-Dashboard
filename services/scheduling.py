@@ -33,21 +33,27 @@ def find_best_interval(
     if df_price.empty:
         return None
 
-    # Merge on nearest hour
     df_p = df_price.copy()
     df_p["DateTime"] = pd.to_datetime(df_p["DateTime"])
+
+    # Prefer Actual over Predicted when both exist for the same hour
+    if "Source" in df_p.columns:
+        df_p["_rank"] = df_p["Source"].map({"Actual": 0, "Predicted": 1}).fillna(2)
+        df_p = df_p.sort_values(["DateTime", "_rank"]).drop_duplicates("DateTime", keep="first")
+        df_p = df_p.drop(columns=["_rank", "Source"], errors="ignore")
+
     df_p = df_p.set_index("DateTime").sort_index()
-    
+
+    # Resample to hourly so duration_steps == number of hours
+    df_p = df_p.resample("1h").first().dropna(subset=["SpotPrice_DKK_per_kWh"])
+
     # Filter for future only (from now)
     now = _now_dk().floor("h")
-    
-    # Prep for Search
-    # We'll search across all future data
+
     df_full = df_p[df_p.index >= now].copy()
     if df_full.empty:
         return None
 
-    # Global min/max for normalization (though with only cost, we just minimize the mean)
     p_vals = df_full["SpotPrice_DKK_per_kWh"].values
     p_min, p_max = np.min(p_vals), np.max(p_vals)
 
