@@ -1,6 +1,7 @@
 {
-    "mae": 192.4646,
-    "rmse": 236.8606,
-    "mape_pct": 21.08,
-    "last_updated": "2026-03-16 14:26:59"
+    "mae": 164.1435,
+    "rmse": 201.2428,
+    "mape_pct": 18.09,
+    "last_updated": "2026-03-17 12:31:07",
+    "tomorrow_available": false
 }
