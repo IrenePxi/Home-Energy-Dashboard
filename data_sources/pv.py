@@ -36,13 +36,20 @@ from meteostat import Point, Hourly, Daily
 
 # MQTT
 from services.paths import results_dir
+from services.prediction_refresh import ensure_fresh_prediction
 
 def load_pv_predictions():
     """Loads PV prediction results."""
     csv_path = results_dir() / "pv_prediction_result.csv"
+    ensure_fresh_prediction(
+        csv_path,
+        run_pv_prediction,
+        session_key="pv_forecast",
+        spinner_message="Refreshing PV power predictions...",
+    )
     if not csv_path.exists():
         raise FileNotFoundError(f"File not found: {csv_path}")
-    
+
     df_pv = pd.read_csv(csv_path)
     df_pv["DateTime"] = pd.to_datetime(df_pv["DateTime"])
     return df_pv

@@ -14,6 +14,7 @@ import warnings
 import json
 from datetime import datetime, timedelta
 from services.paths import results_dir
+from services.prediction_refresh import ensure_fresh_prediction
 
 _TZ = "Europe/Copenhagen"
 def _now_dk():
@@ -40,9 +41,15 @@ TZ_DK = "Europe/Copenhagen"
 def load_electricity_prices():
     """Loads electricity price prediction results."""
     csv_path = results_dir() / "Electricity_price_prediction_result.csv"
+    ensure_fresh_prediction(
+        csv_path,
+        update_electricity_predictions,
+        session_key="electricity_price",
+        spinner_message="Refreshing electricity price predictions...",
+    )
     if not csv_path.exists():
         raise FileNotFoundError(f"File not found: {csv_path}")
-        
+
     df_price = pd.read_csv(csv_path)
     df_price["DateTime"] = pd.to_datetime(df_price["DateTime"], errors="coerce")
     df_price = df_price.dropna(subset=["DateTime"])

@@ -6,6 +6,7 @@ from services.scripts import run_py
 from data_sources.electricity_prices import load_electricity_prices, load_unified_price_data
 from data_sources.pv import load_pv_predictions
 from data_sources.gas import fetch_gas_prices
+from services.prediction_refresh import clear_auto_refresh_failure, get_auto_refresh_error
 
 _TZ = "Europe/Copenhagen"
 def _now_dk():
@@ -33,10 +34,14 @@ def _add_day_bands(fig, x_min, x_max, colors=_DAY_COLORS):
 # Callbacks to lock autorefresh
 def start_price_update():
     st.session_state["updating_price"] = True
+    st.session_state.pop("price_auto_updated", None)
+    clear_auto_refresh_failure("electricity_price")
 
 def start_pv_update():
     st.session_state["updating_pv"] = True
+    st.session_state.pop("pv_auto_updated", None)
     st.session_state.pop("pv_update_msg", None)  # Clear previous result
+    clear_auto_refresh_failure("pv_forecast")
 
 def render_electricity_price():
     # --- 1. Electricity Price Prediction Block ---
@@ -65,7 +70,10 @@ def render_electricity_price():
         try:
             # Loaded from top-level import
             df_price = load_unified_price_data()
-            
+            refresh_err = get_auto_refresh_error("electricity_price")
+            if refresh_err:
+                st.warning(f"Electricity predictions could not be refreshed automatically: {refresh_err}")
+
             # Filter to today and tomorrow
             today_start = _now_dk().normalize()
             tomorrow_end = today_start + pd.Timedelta(days=2)
@@ -106,9 +114,8 @@ def render_electricity_price():
                     pass # We trust file_age or tomorrow_coverage mostly
 
                 if not st.session_state.get("updating_price", False) and not st.session_state.get("price_auto_updated", False):
-                    if needs_update:
+                    if needs_update and not get_auto_refresh_error("electricity_price"):
                         st.session_state["updating_price"] = True
-                        st.session_state["price_auto_updated"] = True
                         st.rerun()
 
                 threshold = df_bar["SpotPrice_DKK_per_kWh"].quantile(0.75)
@@ -161,7 +168,8 @@ def render_electricity_price():
                         finally:
                             st.session_state["updating_price"] = False
                             st.session_state["long_running_task"] = False
-                            st.session_state["price_auto_updated"] = True # Mark as done
+                            st.session_state["price_auto_updated"] = True
+                            clear_auto_refresh_failure("electricity_price")
                             st.rerun()
             else:
                 st.info("No hourly price data available for today.")
@@ -169,9 +177,9 @@ def render_electricity_price():
 
                 # If no data at all, maybe try auto-update once
                 if not st.session_state.get("updating_price", False) and not st.session_state.get("price_auto_updated", False):
-                    st.session_state["updating_price"] = True
-                    st.session_state["price_auto_updated"] = True
-                    st.rerun()
+                    if not get_auto_refresh_error("electricity_price"):
+                        st.session_state["updating_price"] = True
+                        st.rerun()
 
             # Line Chart
 
@@ -273,6 +281,9 @@ def render_pv_forecast():
 
         try:
             df_pv = load_pv_predictions()
+            refresh_err = get_auto_refresh_error("pv_forecast")
+            if refresh_err:
+                st.warning(f"PV predictions could not be refreshed automatically: {refresh_err}")
 
             # Check if prediction data is stale or file is old
             latest_pv_dt = pd.to_datetime(df_pv["DateTime"]).max()
@@ -289,9 +300,9 @@ def render_pv_forecast():
                 
                 # --- Auto Update Logic for PV ---
                 if not st.session_state.get("updating_pv", False) and not st.session_state.get("pv_auto_updated", False):
-                    st.session_state["updating_pv"] = True
-                    st.session_state["pv_auto_updated"] = True
-                    st.rerun()
+                    if not get_auto_refresh_error("pv_forecast"):
+                        st.session_state["updating_pv"] = True
+                        st.rerun()
 
             fig_pv = px.line(df_pv, x="DateTime", y="Corrected_PV", title="Predicted PV Power", labels={"DateTime": "Time", "Corrected_PV": "PV Power (kW)"})
             now = _now_dk().round("1min")
